@@ -204,6 +204,18 @@ export class AIChat extends EventEmitterMixin(ReactiveComponent) {
   }
 
   /**
+   * Re-append all messages to DOM after template render
+   * This is needed because template render wipes the shadow DOM
+   */
+  reappendAllMessages() {
+    if (!this.messages || this.messages.length === 0) return;
+
+    this.messages.forEach(msg => {
+      this.appendMessageToDOM(msg);
+    });
+  }
+
+  /**
    * Attach event listeners to buttons within a message
    */
   attachMessageEventListeners(messageEl) {
@@ -559,6 +571,10 @@ export class AIChat extends EventEmitterMixin(ReactiveComponent) {
 
     this.shadowRoot.innerHTML = template;
     this.attachRenderedEventListeners();
+
+    // Re-append all existing messages after template render
+    // (template render wipes the DOM, so we need to restore messages)
+    this.reappendAllMessages();
   }
 
   formatMessageContent(content) {
