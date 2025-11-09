@@ -10,7 +10,6 @@
     "setup": "node scripts/setup.js",
     "backup": "node scripts/backup.js",
   "migrate:mongo": "node scripts/migrate-to-mongo.js",
-  "reset:db": "node scripts/reset-data.js",
     "test:ui": "node test/ui-chat-smoke.js"
   },
   "dependencies": {

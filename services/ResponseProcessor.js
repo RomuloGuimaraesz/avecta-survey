@@ -241,26 +241,37 @@ class ResponseProcessor {
 
   generateStatisticalContext(intelligentContext) {
     if (!intelligentContext || !intelligentContext.statisticalProfile) {
-      return 'Statistical analysis requires larger sample size for reliable conclusions.';
+      return 'É necessário coletar mais respostas para ter conclusões mais confiáveis.';
     }
 
     const stats = intelligentContext.statisticalProfile;
     const context = [];
 
     if (stats.satisfaction && stats.satisfaction.reliability) {
-      context.push(`• Sample reliability: ${stats.satisfaction.reliability} (n=${stats.satisfaction.sampleSize})`);
+      const reliabilityText = {
+        'high': 'alta confiabilidade',
+        'moderate': 'confiabilidade moderada',
+        'low': 'baixa confiabilidade'
+      };
+      context.push(`• Qualidade dos dados: ${reliabilityText[stats.satisfaction.reliability] || stats.satisfaction.reliability} (${stats.satisfaction.sampleSize} respostas coletadas)`);
     }
 
     if (stats.satisfaction && stats.satisfaction.confidenceInterval) {
-      context.push(`• 95% confidence interval: ±${stats.satisfaction.confidenceInterval.marginOfError}`);
+      context.push(`• Margem de erro: ±${stats.satisfaction.confidenceInterval.marginOfError} pontos`);
     }
 
     if (intelligentContext.benchmarkComparison) {
       const benchmark = intelligentContext.benchmarkComparison;
-      context.push(`• Performance vs. benchmarks: ${benchmark.satisfaction.performance}`);
+      const performanceText = {
+        'excellent': 'acima do esperado',
+        'good': 'dentro do esperado',
+        'fair': 'abaixo do esperado',
+        'poor': 'muito abaixo do esperado'
+      };
+      context.push(`• Desempenho: ${performanceText[benchmark.satisfaction.performance] || benchmark.satisfaction.performance}`);
     }
 
-    return context.length > 0 ? context.join('\n') : 'Statistical context available upon request.';
+    return context.length > 0 ? context.join('\n') : 'Informações sobre a qualidade dos dados disponíveis mediante solicitação.';
   }
 
   /**
@@ -456,7 +467,7 @@ Key Metrics:
 • Satisfaction Score: ${stats.satisfaction.averageScore}/5
 • Engagement Rate: ${stats.population.engagementRate}%
 
-This analysis is based on ${stats.satisfaction.sampleSize} responses with ${stats.satisfaction.reliability} statistical reliability. For detailed insights and recommendations, please refine your query or contact your municipal data analyst.`;
+Esta análise é baseada em ${stats.satisfaction.sampleSize} respostas com ${stats.satisfaction.reliability === 'high' ? 'alta' : stats.satisfaction.reliability === 'moderate' ? 'moderada' : 'baixa'} confiabilidade. Para insights mais detalhados, refina sua consulta ou entre em contato com o analista de dados municipal.`;
   }
 }
 

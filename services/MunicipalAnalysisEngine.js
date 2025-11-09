@@ -18,8 +18,8 @@ class MunicipalAnalysisEngine {
         averageScore: 0,
         maxScore: 5,
         breakdown: [],
-        insights: ['No survey responses available for analysis'],
-        recommendations: ['Increase survey participation to gather satisfaction data'],
+        insights: ['Não há respostas de pesquisa disponíveis para análise.'],
+        recommendations: ['Aumentar a participação na pesquisa para coletar dados de satisfação dos cidadãos.'],
         analysisQuality: 'insufficient_data'
       };
     }
@@ -83,8 +83,8 @@ class MunicipalAnalysisEngine {
       return {
         totalResponses: 0,
         brackets: [],
-        insightSummary: 'Sem respostas com idade para calcular satisfação',
-        recommendations: ['Coletar idade dos respondentes para análises demográficas'],
+        insightSummary: 'Não há informações suficientes sobre a idade dos respondentes para fazer uma análise por faixa etária.',
+        recommendations: ['Solicitar a idade dos cidadãos nas próximas pesquisas para poder identificar se há problemas específicos em diferentes grupos de idade.', 'Entre em contato com os cidadãos que já responderam para coletar informações de idade quando possível.'],
         analysisQuality: 'insufficient_data',
         meta: { computationVersion: 'age_sat_v0.1' }
       };
@@ -128,23 +128,45 @@ class MunicipalAnalysisEngine {
         averageScore: parseFloat((b.totalScore / b.count).toFixed(2))
       }));
 
-    let insightSummary = 'Distribuição de satisfação consistente entre faixas etárias.';
+    let insightSummary = 'A satisfação está distribuída de forma similar entre as diferentes faixas etárias.';
     if (brackets.length > 1) {
       const sorted = [...brackets].sort((a, b) => a.averageScore - b.averageScore);
       const lowest = sorted[0];
       const highest = sorted[sorted.length - 1];
       if (highest.averageScore - lowest.averageScore >= 0.5) {
-        insightSummary = `Diferença relevante: ${highest.label} (${highest.averageScore}) vs ${lowest.label} (${lowest.averageScore}).`;
+        const ageGroupNames = {
+          '15-24': 'jovens (15-24 anos)',
+          '25-34': 'jovens adultos (25-34 anos)',
+          '35-44': 'adultos (35-44 anos)',
+          '45-54': 'adultos maduros (45-54 anos)',
+          '55-64': 'pré-aposentadoria (55-64 anos)',
+          '65+': 'idosos (65+ anos)'
+        };
+        const lowestName = ageGroupNames[lowest.label] || lowest.label;
+        const highestName = ageGroupNames[highest.label] || highest.label;
+        insightSummary = `Há uma diferença importante: ${highestName} estão mais satisfeitos (${highest.averageScore.toFixed(1)}/5) do que ${lowestName} (${lowest.averageScore.toFixed(1)}/5). Isso indica que ${lowestName} podem estar enfrentando problemas específicos que precisam de atenção.`;
       }
     }
 
     const recommendations = [];
     const lowBracket = brackets.find(b => b.averageScore < 3.0);
     if (lowBracket) {
-      recommendations.push(`Plano de intervenção específico para faixa ${lowBracket.label} com satisfação baixa (<3.0).`);
+      const ageGroupNames = {
+        '15-24': 'jovens de 15-24 anos',
+        '25-34': 'jovens adultos de 25-34 anos',
+        '35-44': 'adultos de 35-44 anos',
+        '45-54': 'adultos de 45-54 anos',
+        '55-64': 'pessoas de 55-64 anos',
+        '65+': 'idosos de 65+ anos'
+      };
+      const bracketName = ageGroupNames[lowBracket.label] || `faixa ${lowBracket.label}`;
+      recommendations.push(`Ação prioritária: Contatar diretamente os ${bracketName} que estão insatisfeitos para entender suas preocupações específicas. Agendar reuniões ou visitas para ouvir suas necessidades.`);
+      recommendations.push(`Investigar quais serviços municipais estão falhando para esta faixa etária. Pode ser transporte público, saúde, segurança ou outros serviços que afetam mais esta população.`);
+      recommendations.push(`Desenvolver um plano de ação específico para melhorar os serviços que afetam os ${bracketName}, com prazos claros e acompanhamento mensal.`);
     }
     if (brackets.every(b => b.averageScore >= 3.0)) {
-      recommendations.push('Manter estratégias atuais de satisfação; nenhuma faixa crítica identificada.');
+      recommendations.push('A satisfação está em níveis aceitáveis em todas as faixas etárias. Continue monitorando e mantendo os serviços de qualidade.');
+      recommendations.push('Mantenha o diálogo aberto com todas as faixas etárias para identificar problemas antes que se tornem críticos.');
     }
 
     return {
@@ -168,39 +190,39 @@ class MunicipalAnalysisEngine {
     // Sample size assessment
     if (rawData.total < 30) {
       quality = 'limited';
-      insights.push(`Small sample size (${rawData.total} responses) - results should be interpreted cautiously`);
-      recommendations.push('Increase survey participation to improve statistical reliability');
+      insights.push(`Poucos respondentes (${rawData.total} pessoas) - os resultados podem não representar toda a população. É recomendável coletar mais respostas.`);
+      recommendations.push('Aumentar a participação na pesquisa para ter uma visão mais confiável da satisfação dos cidadãos.');
     } else if (rawData.total >= 100) {
       quality = 'excellent';
-      insights.push(`Strong sample size (${rawData.total} responses) provides reliable insights`);
+      insights.push(`Boa quantidade de respostas (${rawData.total} pessoas) - os dados são confiáveis para tomada de decisão.`);
     }
 
     // Satisfaction level analysis
     if (dissatisfactionTier === 'critical') {
-      insights.push(`Critical concern: ${dissatisfiedPercent.toFixed(1)}% of residents express dissatisfaction`);
-      recommendations.push('Priority action: address top issues driving dissatisfaction');
-      recommendations.push('Schedule immediate community meetings with affected residents');
+      insights.push(`Situação crítica: ${dissatisfiedPercent.toFixed(1)}% dos cidadãos estão insatisfeitos. Isso requer ação imediata.`);
+      recommendations.push('Ação prioritária: identificar e resolver os principais problemas que estão causando insatisfação.');
+      recommendations.push('Agendar reuniões urgentes com os cidadãos afetados para ouvir suas preocupações e buscar soluções.');
     } else if (dissatisfactionTier === 'elevated') {
-      insights.push(`Elevated dissatisfaction: ${dissatisfiedPercent.toFixed(1)}% requires targeted intervention`);
-      recommendations.push('Investigate root causes through qualitative follow-ups');
+      insights.push(`Alerta: ${dissatisfiedPercent.toFixed(1)}% dos cidadãos estão insatisfeitos. É necessário agir para evitar que a situação piore.`);
+      recommendations.push('Investigar as causas da insatisfação através de contatos diretos e conversas com os cidadãos afetados.');
     }
 
     if (avgScore < 3.0) {
-      insights.push(`Below-neutral satisfaction: average score ${avgScore.toFixed(2)}/5 indicates structural issues`);
-      recommendations.push('Implement targeted satisfaction improvement initiatives');
+      insights.push(`Satisfação baixa: nota média de ${avgScore.toFixed(2)}/5 indica problemas estruturais que precisam ser corrigidos.`);
+      recommendations.push('Implementar ações direcionadas para melhorar a satisfação, focando nos problemas mais relatados.');
     } else if (avgScore >= 4.0) {
-      insights.push(`Positive satisfaction: ${avgScore.toFixed(2)}/5 reflects strong citizen sentiment`);
-      recommendations.push('Document best practices sustaining high satisfaction');
+      insights.push(`Satisfação positiva: nota média de ${avgScore.toFixed(2)}/5 mostra que os cidadãos estão satisfeitos com os serviços.`);
+      recommendations.push('Documentar o que está funcionando bem para manter esses níveis de satisfação.');
     } else if (avgScore >= 3.0 && dissatisfactionTier === 'low') {
-      insights.push(`Moderate satisfaction: ${avgScore.toFixed(2)}/5 with low dissatisfaction`);
-      recommendations.push('Focus on converting neutral respondents to promoters');
+      insights.push(`Satisfação moderada: nota média de ${avgScore.toFixed(2)}/5 com pouca insatisfação. Há espaço para melhorar.`);
+      recommendations.push('Focar em converter os cidadãos neutros em satisfeitos através de melhorias nos serviços.');
     }
 
     // Distribution analysis
     const neutralCount = breakdown.find(b => b.level === 'Neutro')?.count || 0;
     if (neutralCount > rawData.total * 0.3) {
-      insights.push(`High neutral responses (${neutralCount}) suggest indifferent or undecided residents`);
-      recommendations.push('Engage neutral respondents to understand their specific needs');
+      insights.push(`Muitos cidadãos neutros (${neutralCount} pessoas, ${((neutralCount / rawData.total) * 100).toFixed(1)}%) - isso pode indicar que eles não estão nem satisfeitos nem insatisfeitos, ou que não têm opinião formada.`);
+      recommendations.push('Entrar em contato com os cidadãos neutros para entender suas necessidades específicas e identificar oportunidades de melhoria.');
     }
 
     return { insights, recommendations, quality };
@@ -270,8 +292,8 @@ class MunicipalAnalysisEngine {
 
     if (neighborhoodsSortedByResponse.length === 0) {
       return {
-        insights: ['No neighborhood data available'],
-        recommendations: ['Ensure neighborhood information is collected during registration'],
+        insights: ['Não há dados de bairros disponíveis para análise.'],
+        recommendations: ['Certifique-se de coletar informações de bairro durante o cadastro dos cidadãos.'],
         equityAssessment: 'unknown'
       };
     }
@@ -281,32 +303,33 @@ class MunicipalAnalysisEngine {
     const highPerforming = neighborhoodsSortedByResponse.filter(n => n.responseRate >= 80);
 
     // Overall performance
-    insights.push(`Geographic coverage: ${neighborhoodsSortedByResponse.length} neighborhoods, average response rate ${avgResponseRate.toFixed(1)}%`);
+    insights.push(`Cobertura geográfica: ${neighborhoodsSortedByResponse.length} bairros, com taxa média de resposta de ${avgResponseRate.toFixed(1)}%.`);
 
     // Highest response rate (top of sorted list)
     const top = neighborhoodsSortedByResponse[0];
-    insights.push(`Highest response rate: ${top.neighborhood} (${top.responseRate.toFixed(1)}%)`);
+    insights.push(`Melhor desempenho: ${top.neighborhood} com ${top.responseRate.toFixed(1)}% de resposta.`);
 
     if (highPerforming.length > 0) {
-      recommendations.push(`Replicate engagement practices from: ${highPerforming.slice(0,3).map(n => n.neighborhood).join(', ')}`);
+      const neighborhoods = highPerforming.slice(0,3).map(n => n.neighborhood).join(', ');
+      recommendations.push(`Copiar as práticas que funcionam bem nos bairros: ${neighborhoods}. Identifique o que está funcionando e aplique em outros bairros.`);
     }
 
     if (lowPerforming.length > 0) {
       const list = lowPerforming.slice(0,5).map(n => `${n.neighborhood} (${n.responseRate.toFixed(1)}%)`).join(', ');
-      insights.push(`Areas needing focus (below relative threshold): ${list}`);
+      insights.push(`Bairros que precisam de atenção: ${list}. Estes bairros têm participação abaixo da média.`);
       equityAssessment = lowPerforming.length > responseRates.length * 0.4 ? 'concern' : 'moderate';
-      recommendations.push('Deploy targeted outreach to low-response neighborhoods');
+      recommendations.push(`Ação prioritária: Contatar diretamente os cidadãos nos bairros com baixa participação para entender por que não estão respondendo. Visitar estes bairros e fazer reuniões presenciais pode aumentar o engajamento.`);
     } else {
       equityAssessment = 'excellent';
-      insights.push('Broadly consistent engagement across neighborhoods');
+      insights.push('A participação está consistente entre os bairros, o que é um bom sinal de engajamento equilibrado.');
     }
 
     const totalContacts = neighborhoodsSortedByResponse.reduce((s, n) => s + n.total, 0);
     if (totalContacts > 0) {
       const topShare = (top.total / totalContacts) * 100;
       if (topShare > 40) {
-        insights.push(`Participation concentration risk: ${top.neighborhood} holds ${topShare.toFixed(1)}% of contacts`);
-        recommendations.push('Broaden recruitment to reduce geographic concentration');
+        insights.push(`Atenção: ${top.neighborhood} concentra ${topShare.toFixed(1)}% dos contatos. Isso pode indicar que outros bairros não estão sendo bem representados.`);
+        recommendations.push('Expandir o cadastro de cidadãos em outros bairros para ter uma representação mais equilibrada da população.');
       }
     }
 
@@ -322,8 +345,8 @@ class MunicipalAnalysisEngine {
       return {
         total: 0,
         breakdown: [],
-        insights: ['No issue data available for analysis'],
-        recommendations: ['Increase survey participation to identify community concerns']
+        insights: ['Não há dados de problemas relatados pelos cidadãos para análise.'],
+        recommendations: ['Aumentar a participação na pesquisa para identificar as principais preocupações da comunidade.']
       };
     }
 
@@ -353,25 +376,25 @@ class MunicipalAnalysisEngine {
     const recommendations = [];
 
     if (breakdown.length === 0) {
-      return { insights: ['No issues reported'], recommendations: [] };
+      return { insights: ['Nenhum problema foi relatado pelos cidadãos.'], recommendations: [] };
     }
 
     const topIssue = breakdown[0];
     const topThreePercentage = breakdown.slice(0, 3).reduce((sum, issue) => sum + parseFloat(issue.percentage), 0);
 
-    insights.push(`Top community concern: ${topIssue.issue} (${topIssue.percentage}% of ${rawData.total} responses)`);
-    insights.push(`Top 3 issues represent ${topThreePercentage.toFixed(1)}% of all concerns`);
+    insights.push(`Principal preocupação da comunidade: ${topIssue.issue} (${topIssue.percentage}% de ${rawData.total} respostas).`);
+    insights.push(`As 3 principais questões representam ${topThreePercentage.toFixed(1)}% de todas as preocupações relatadas.`);
 
     // Issue concentration analysis
     if (parseFloat(topIssue.percentage) > 50) {
-      insights.push('Single dominant issue indicates clear municipal priority');
-      recommendations.push(`Focus immediate resources on addressing: ${topIssue.issue}`);
+      insights.push(`Há uma questão dominante que precisa de atenção prioritária: ${topIssue.issue}.`);
+      recommendations.push(`Ação imediata: Focar recursos e esforços para resolver o problema de ${topIssue.issue}. Este é claramente a prioridade número 1 da comunidade.`);
     } else if (topThreePercentage > 70) {
-      insights.push('Concentrated concerns in few key areas - manageable scope for intervention');
-      recommendations.push('Develop integrated approach addressing top 3 issues simultaneously');
+      insights.push('As preocupações estão concentradas em poucas áreas principais, o que facilita o trabalho de intervenção.');
+      recommendations.push('Desenvolver um plano integrado que aborde as 3 principais questões simultaneamente, de forma coordenada.');
     } else {
-      insights.push('Diverse range of concerns requires broad municipal response strategy');
-      recommendations.push('Consider comprehensive municipal improvement plan addressing multiple priorities');
+      insights.push('Há uma ampla gama de preocupações diferentes, indicando que a comunidade tem necessidades diversas.');
+      recommendations.push('Considerar um plano abrangente de melhorias municipais que aborde múltiplas prioridades de forma organizada.');
     }
 
     // Specific issue recommendations
@@ -421,33 +444,33 @@ class MunicipalAnalysisEngine {
     // Overall performance assessment
     if (responseRate >= 70) {
       performanceLevel = 'excellent';
-      insights.push(`Excellent response rate (${responseRate}%) indicates highly effective communication strategy`);
+      insights.push(`Taxa de resposta excelente (${responseRate}%) - a estratégia de comunicação está funcionando muito bem.`);
     } else if (responseRate >= 50) {
       performanceLevel = 'good';
-      insights.push(`Good response rate (${responseRate}%) shows solid community engagement`);
+      insights.push(`Taxa de resposta boa (${responseRate}%) - há um bom engajamento da comunidade.`);
     } else if (responseRate >= 30) {
       performanceLevel = 'fair';
-      insights.push(`Moderate response rate (${responseRate}%) suggests room for improvement`);
-      recommendations.push('Enhance outreach strategies to improve response rates');
+      insights.push(`Taxa de resposta moderada (${responseRate}%) - há espaço para melhorar o engajamento.`);
+      recommendations.push('Melhorar as estratégias de comunicação para aumentar as taxas de resposta. Testar diferentes horários de envio e formatos de mensagem.');
     } else {
       performanceLevel = 'poor';
-      insights.push(`Low response rate (${responseRate}%) indicates significant engagement challenges`);
-      recommendations.push('Comprehensive review of communication approach needed');
+      insights.push(`Taxa de resposta baixa (${responseRate}%) - há desafios significativos de engajamento que precisam ser resolvidos.`);
+      recommendations.push('Revisão completa da abordagem de comunicação necessária. Considerar mudanças no conteúdo das mensagens, horários de envio e canais de comunicação.');
     }
 
     // Engagement funnel analysis
-    insights.push(`Engagement metrics: ${rawData.answered}/${rawData.total} responses (${responseRate}% response rate)`);
-    insights.push(`Communication effectiveness: ${engagementRate}% click-through rate`);
+    insights.push(`Resumo do engajamento: ${rawData.answered} de ${rawData.total} cidadãos responderam (${responseRate}% de taxa de resposta).`);
+    insights.push(`Eficácia da comunicação: ${engagementRate}% dos cidadãos clicaram no link da pesquisa após receber a mensagem.`);
 
     if (engagementRate < 60) {
-      recommendations.push('Improve message content and timing to increase click-through rates');
+      recommendations.push(`Melhorar o conteúdo e o horário das mensagens para aumentar o número de pessoas que clicam no link. A taxa atual de ${engagementRate}% pode ser melhorada.`);
     } else if (engagementRate >= 80) {
-      insights.push('Excellent click-through rates demonstrate compelling messaging');
+      insights.push('Taxa de cliques excelente - as mensagens estão interessantes e motivando os cidadãos a participar.');
     }
 
     if (completionRate < 70 && rawData.clicked > 0) {
-      insights.push(`Survey abandonment concern: only ${completionRate}% complete after clicking`);
-      recommendations.push('Review survey design for usability and length optimization');
+      insights.push(`Atenção: apenas ${completionRate}% completaram a pesquisa após clicar. Muitos cidadãos começam mas não terminam.`);
+      recommendations.push('Revisar o design da pesquisa - pode estar muito longa ou difícil de completar. Simplificar e tornar mais rápida pode aumentar a conclusão.');
     }
 
     return { insights, recommendations, performanceLevel };
@@ -464,8 +487,8 @@ class MunicipalAnalysisEngine {
         interested: 0,
         notInterested: 0,
         rate: '0',
-        insights: ['No participation data available'],
-        recommendations: ['Include participation questions in future surveys']
+        insights: ['Não há dados de participação disponíveis.'],
+        recommendations: ['Incluir perguntas sobre interesse em participar em eventos comunitários nas próximas pesquisas.']
       };
     }
 
@@ -495,28 +518,28 @@ class MunicipalAnalysisEngine {
 
     if (participationRate >= 70) {
       engagementPotential = 'high';
-      insights.push(`Exceptional: ${participationRate}% of residents demonstrate active civic interest`);
-      insights.push('High civic engagement represents valuable social capital for municipal initiatives');
-      recommendations.push('Capitalize on strong interest with regular, structured community events');
-      recommendations.push('Consider forming citizen advisory committees with engaged residents');
+      insights.push(`Excelente: ${participationRate}% dos cidadãos demonstram interesse ativo em participar de eventos comunitários.`);
+      insights.push('Este alto engajamento cívico é um valioso capital social para iniciativas municipais.');
+      recommendations.push('Aproveitar este interesse forte organizando eventos comunitários regulares e estruturados.');
+      recommendations.push('Considerar formar comitês consultivos de cidadãos com os residentes mais engajados.');
     } else if (participationRate >= 40) {
       engagementPotential = 'medium';
-      insights.push(`Good potential: ${participationRate}% show interest in community participation`);
-      insights.push('Solid foundation for building stronger community engagement');
-      recommendations.push(`Organize pilot community events with the ${interested} interested residents`);
-      recommendations.push('Use feedback from initial events to refine and expand programming');
+      insights.push(`Bom potencial: ${participationRate}% dos cidadãos mostram interesse em participar de eventos comunitários.`);
+      insights.push('Base sólida para construir um engajamento comunitário mais forte.');
+      recommendations.push(`Organizar eventos comunitários piloto com os ${interested} cidadãos interessados para começar a construir participação.`);
+      recommendations.push('Usar o feedback dos primeiros eventos para melhorar e expandir a programação.');
     } else {
       engagementPotential = 'low';
-      insights.push(`Limited engagement: only ${participationRate}% express participation interest`);
-      insights.push('Low interest may indicate barriers, skepticism, or communication gaps');
-      recommendations.push('Research participation barriers: timing, location, format preferences');
-      recommendations.push('Start with small, informal community gatherings to build trust');
-      recommendations.push('Consider incentives or more accessible event formats');
+      insights.push(`Engajamento limitado: apenas ${participationRate}% expressam interesse em participar.`);
+      insights.push('O baixo interesse pode indicar barreiras (falta de tempo, transporte), desconfiança ou falhas na comunicação.');
+      recommendations.push('Pesquisar barreiras à participação: perguntar sobre preferências de horário, local e formato de eventos.');
+      recommendations.push('Começar com pequenos encontros comunitários informais para construir confiança.');
+      recommendations.push('Considerar oferecer incentivos ou formatos de eventos mais acessíveis (on-line, próximos ao bairro, etc.).');
     }
 
     if (interested > 0) {
-      insights.push(`Community engagement: ${interested} residents interested in participation from ${rawData.total} responses`);
-      recommendations.push(`Maintain database of ${interested} engaged residents for targeted event invitations`);
+      insights.push(`Interesse comunitário: ${interested} cidadãos interessados em participar de ${rawData.total} respostas.`);
+      recommendations.push(`Manter uma lista dos ${interested} cidadãos engajados para convites direcionados para eventos futuros.`);
     }
 
     return { insights, recommendations, engagementPotential };
@@ -531,8 +554,8 @@ class MunicipalAnalysisEngine {
       return {
         total: 0,
         residents: [],
-        insights: ['No dissatisfied residents identified in current data'],
-        recommendations: ['Monitor satisfaction levels in future surveys'],
+        insights: ['Não há cidadãos insatisfeitos identificados nos dados atuais.'],
+        recommendations: ['Continuar monitorando os níveis de satisfação em pesquisas futuras.'],
         urgencyLevel: 'low'
       };
     }
@@ -567,8 +590,8 @@ class MunicipalAnalysisEngine {
       return {
         total: 0,
         residents: [],
-        insights: ['No residents have expressed participation interest'],
-        recommendations: ['Include participation questions in future outreach']
+        insights: ['Nenhum cidadão expressou interesse em participar de eventos comunitários.'],
+        recommendations: ['Incluir perguntas sobre participação em eventos futuros para identificar cidadãos interessados.']
       };
     }
 
@@ -599,8 +622,8 @@ class MunicipalAnalysisEngine {
       return {
         total: 0,
         residents: [],
-        insights: ['All surveyed residents are either interested or undecided about participation'],
-        recommendations: ['Continue fostering engagement; monitor sentiments over time']
+        insights: ['Todos os cidadãos pesquisados estão interessados ou indecisos sobre participação.'],
+        recommendations: ['Continuar promovendo o engajamento e monitorar os sentimentos ao longo do tempo.']
       };
     }
 
@@ -617,15 +640,15 @@ class MunicipalAnalysisEngine {
 
     // Reuse insights generation with cautionary framing
     const insights = [
-      `Participation hesitation: ${percentage}% of respondents indicated no interest now`,
-      'Potential barriers: time availability, relevance, trust, or communication'
+      `Hesitação na participação: ${percentage}% dos respondentes indicaram que não têm interesse no momento.`,
+      'Possíveis barreiras: falta de tempo, relevância percebida, desconfiança ou falhas na comunicação.'
     ];
 
     const recommendations = [
-      'Offer low-commitment, flexible participation formats',
-      'Clarify value proposition and expected time investment',
-      'Engage via neighborhood channels to build trust',
-      'Re-invite after addressing top reported issues'
+      'Oferecer formatos de participação com baixo compromisso e flexíveis (eventos curtos, on-line, etc.).',
+      'Esclarecer o valor e o benefício dos eventos, além do tempo de investimento esperado.',
+      'Engajar através de canais do bairro para construir confiança.',
+      'Reconvidar após resolver os principais problemas relatados pelos cidadãos.'
     ];
 
     return {
@@ -650,8 +673,8 @@ class MunicipalAnalysisEngine {
       return {
         total: 0,
         residents: [],
-        insights: ['All contacts have been processed successfully'],
-        recommendations: ['Continue current engagement strategies']
+        insights: ['Todos os contatos foram processados com sucesso.'],
+        recommendations: ['Continuar com as estratégias atuais de engajamento.']
       };
     }
 
@@ -779,14 +802,14 @@ class MunicipalAnalysisEngine {
 
     if (highPriority > totalDissatisfied * 0.6) {
       urgencyLevel = 'high';
-      insights.push(`Critical situation: ${highPriority} residents express severe dissatisfaction`);
-      insights.push('High concentration of "muito insatisfeito" responses indicates systemic issues');
-      recommendations.push(`Immediate action required: direct contact with ${highPriority} high-priority cases`);
-      recommendations.push('Consider emergency municipal response plan');
+      insights.push(`Situação crítica: ${highPriority} cidadãos estão muito insatisfeitos. Isso requer ação imediata.`);
+      insights.push('A alta concentração de respostas "muito insatisfeito" indica problemas sistêmicos que afetam muitos cidadãos.');
+      recommendations.push(`Ação urgente: Contatar diretamente os ${highPriority} casos de alta prioridade para entender e resolver seus problemas.`);
+      recommendations.push('Considerar um plano de resposta municipal de emergência para resolver problemas críticos rapidamente.');
     } else if (highPriority > 0) {
-      insights.push(`Priority concern: ${highPriority} cases require immediate attention`);
-      insights.push(`Additional ${totalDissatisfied - highPriority} cases need scheduled follow-up`);
-      recommendations.push(`Escalated response for ${highPriority} most critical cases`);
+      insights.push(`Preocupação prioritária: ${highPriority} casos precisam de atenção imediata.`);
+      insights.push(`Além disso, ${totalDissatisfied - highPriority} casos precisam de acompanhamento agendado.`);
+      recommendations.push(`Resposta prioritária para os ${highPriority} casos mais críticos. Contatar pessoalmente ou por telefone.`);
     }
 
     // Issue pattern analysis
@@ -800,8 +823,8 @@ class MunicipalAnalysisEngine {
       const topIssue = Object.keys(issueFrequency).reduce((a, b) => 
         issueFrequency[a] > issueFrequency[b] ? a : b
       );
-      insights.push(`Primary concern among dissatisfied residents: ${topIssue} (${issueFrequency[topIssue]} cases)`);
-      recommendations.push(`Address systemic issue: ${topIssue} affects multiple dissatisfied residents`);
+      insights.push(`Principal preocupação entre os cidadãos insatisfeitos: ${topIssue} (${issueFrequency[topIssue]} casos).`);
+      recommendations.push(`Resolver o problema sistêmico de ${topIssue} que afeta múltiplos cidadãos insatisfeitos. Este é um problema comum que precisa de uma solução ampla.`);
     }
 
     return { insights, recommendations, urgencyLevel };
@@ -812,14 +835,14 @@ class MunicipalAnalysisEngine {
     const rate = parseFloat(percentage);
 
     if (rate >= 60) {
-      insights.push(`Strong civic engagement: ${rate}% participation interest indicates active community`);
-      insights.push('High engagement represents valuable social capital for municipal initiatives');
+      insights.push(`Forte engajamento cívico: ${rate}% de interesse em participar indica uma comunidade ativa.`);
+      insights.push('Este alto engajamento é um valioso capital social para iniciativas municipais.');
     } else if (rate >= 30) {
-      insights.push(`Moderate engagement: ${rate}% participation rate provides solid foundation`);
-      insights.push('Good potential for community building with proper cultivation');
+      insights.push(`Engajamento moderado: ${rate}% de interesse em participar fornece uma base sólida.`);
+      insights.push('Bom potencial para construção comunitária com o cultivo adequado.');
     } else {
-      insights.push(`Limited engagement: ${rate}% participation suggests barriers or communication gaps`);
-      insights.push('Low interest may indicate need for different engagement approaches');
+      insights.push(`Engajamento limitado: ${rate}% de interesse sugere barreiras ou falhas na comunicação.`);
+      insights.push('O baixo interesse pode indicar necessidade de diferentes abordagens de engajamento.');
     }
 
     // Neighborhood distribution
@@ -832,7 +855,7 @@ class MunicipalAnalysisEngine {
       const topNeighborhood = Object.keys(neighborhoods).reduce((a, b) => 
         neighborhoods[a] > neighborhoods[b] ? a : b
       );
-      insights.push(`Geographic concentration: ${topNeighborhood} leads with ${neighborhoods[topNeighborhood]} interested residents`);
+      insights.push(`Concentração geográfica: ${topNeighborhood} lidera com ${neighborhoods[topNeighborhood]} cidadãos interessados.`);
     }
 
     return insights;
@@ -842,17 +865,17 @@ class MunicipalAnalysisEngine {
     const recommendations = [];
     
     if (residents.length > 20) {
-      recommendations.push(`Strong base: ${residents.length} interested residents can anchor regular community events`);
-      recommendations.push('Consider forming citizen advisory committee with most engaged residents');
+      recommendations.push(`Base forte: ${residents.length} cidadãos interessados podem sustentar eventos comunitários regulares.`);
+      recommendations.push('Considerar formar um comitê consultivo de cidadãos com os residentes mais engajados.');
     } else if (residents.length > 5) {
-      recommendations.push(`Start with pilot events targeting ${residents.length} interested residents`);
-      recommendations.push('Use feedback to refine approach before broader community outreach');
+      recommendations.push(`Começar com eventos piloto direcionados aos ${residents.length} cidadãos interessados.`);
+      recommendations.push('Usar o feedback para refinar a abordagem antes de expandir para toda a comunidade.');
     } else {
-      recommendations.push('Small but valuable group - focus on individual engagement and relationship building');
+      recommendations.push('Grupo pequeno mas valioso - focar em engajamento individual e construção de relacionamentos.');
     }
 
-    recommendations.push('Maintain dedicated contact list for community event invitations');
-    recommendations.push('Survey this group for preferred event types, timing, and locations');
+    recommendations.push('Manter uma lista de contatos dedicada para convites de eventos comunitários.');
+    recommendations.push('Pesquisar este grupo sobre tipos de eventos preferidos, horários e locais.');
 
     return recommendations;
   }
@@ -863,18 +886,18 @@ class MunicipalAnalysisEngine {
 
     if (rawData.clickedButNotResponded.length > 0) {
       const abandonmentRate = (rawData.clickedButNotResponded.length / total * 100).toFixed(1);
-      insights.push(`Survey abandonment: ${rawData.clickedButNotResponded.length} residents clicked but didn't complete (${abandonmentRate}%)`);
+      insights.push(`Abandono da pesquisa: ${rawData.clickedButNotResponded.length} cidadãos clicaram mas não completaram (${abandonmentRate}%).`);
       if (rawData.clickedButNotResponded.length > total * 0.3) {
-        insights.push('High abandonment rate suggests usability or survey length issues');
+        insights.push('Taxa alta de abandono sugere problemas de usabilidade ou pesquisa muito longa.');
       }
     }
 
     if (rawData.contacted.length > 0) {
-      insights.push(`Low initial engagement: ${rawData.contacted.length} contacted residents haven't clicked survey link`);
+      insights.push(`Engajamento inicial baixo: ${rawData.contacted.length} cidadãos foram contatados mas não clicaram no link da pesquisa.`);
     }
 
     if (rawData.notContacted.length > 0) {
-      insights.push(`Outreach opportunity: ${rawData.notContacted.length} residents haven't been contacted yet`);
+      insights.push(`Oportunidade de alcance: ${rawData.notContacted.length} cidadãos ainda não foram contatados.`);
     }
 
     return insights;
@@ -884,21 +907,21 @@ class MunicipalAnalysisEngine {
     const recommendations = [];
 
     if (rawData.clickedButNotResponded.length > 0) {
-      recommendations.push(`Priority follow-up: ${rawData.clickedButNotResponded.length} residents who showed initial interest`);
-      recommendations.push('Consider phone outreach for residents who clicked but didn\'t complete');
+      recommendations.push(`Acompanhamento prioritário: ${rawData.clickedButNotResponded.length} cidadãos que mostraram interesse inicial (clicaram mas não completaram).`);
+      recommendations.push('Considerar contato telefônico para cidadãos que clicaram mas não completaram a pesquisa.');
       if (rawData.clickedButNotResponded.length > 10) {
-        recommendations.push('Review survey design for potential usability improvements');
+        recommendations.push('Revisar o design da pesquisa para melhorias potenciais de usabilidade - pode estar muito longa ou complicada.');
       }
     }
 
     if (rawData.contacted.length > 0) {
-      recommendations.push(`Re-engagement strategy: ${rawData.contacted.length} residents need different communication approach`);
-      recommendations.push('Try alternative messaging or timing for non-clickers');
+      recommendations.push(`Estratégia de re-engajamento: ${rawData.contacted.length} cidadãos precisam de uma abordagem de comunicação diferente.`);
+      recommendations.push('Tentar mensagens alternativas ou horários diferentes para quem não clicou no link.');
     }
 
     if (rawData.notContacted.length > 0) {
-      recommendations.push(`Expand outreach: ${rawData.notContacted.length} residents await initial contact`);
-      recommendations.push('Systematic contact plan for remaining residents');
+      recommendations.push(`Expandir o alcance: ${rawData.notContacted.length} cidadãos aguardam contato inicial.`);
+      recommendations.push('Criar um plano sistemático de contato para os cidadãos restantes.');
     }
 
     return recommendations;
@@ -921,28 +944,33 @@ class MunicipalAnalysisEngine {
     const insights = [];
     const recommendations = [];
 
-    insights.push(`System health assessment: ${health.level} condition with ${rawData.totalContacts} total contacts`);
+    const healthText = {
+      'excellent': 'excelente',
+      'good': 'boa',
+      'needs_attention': 'precisa de atenção'
+    };
+    insights.push(`Avaliação da qualidade dos dados: condição ${healthText[health.level] || health.level} com ${rawData.totalContacts} contatos no total.`);
 
     if (rawData.duplicateIssues.length > 0) {
       const duplicateRate = (rawData.duplicateIssues.length / rawData.totalContacts * 100).toFixed(1);
-      insights.push(`Data quality issue: ${rawData.duplicateIssues.length} duplicate contacts (${duplicateRate}%)`);
-      recommendations.push('Implement duplicate detection and cleanup procedures');
+      insights.push(`Problema de qualidade dos dados: ${rawData.duplicateIssues.length} contatos duplicados (${duplicateRate}%).`);
+      recommendations.push('Implementar procedimentos de detecção e limpeza de duplicatas para melhorar a qualidade dos dados.');
     }
 
     if (rawData.incompleteProfiles.length > 0) {
       const incompleteRate = (rawData.incompleteProfiles.length / rawData.totalContacts * 100).toFixed(1);
-      insights.push(`Profile completeness: ${rawData.incompleteProfiles.length} incomplete profiles (${incompleteRate}%)`);
-      recommendations.push('Contact cleanup campaign to complete missing information');
+      insights.push(`Perfis incompletos: ${rawData.incompleteProfiles.length} perfis com informações faltando (${incompleteRate}%).`);
+      recommendations.push('Fazer uma campanha de contato para completar as informações faltantes nos perfis dos cidadãos.');
     }
 
     if (rawData.oldPendingContacts.length > 0) {
-      insights.push(`Follow-up needed: ${rawData.oldPendingContacts.length} contacts with responses pending over 7 days`);
-      recommendations.push('Systematic follow-up for long-pending contacts');
+      insights.push(`Acompanhamento necessário: ${rawData.oldPendingContacts.length} contatos com respostas pendentes há mais de 7 dias.`);
+      recommendations.push('Fazer acompanhamento sistemático para contatos com respostas pendentes há muito tempo.');
     }
 
     if (health.level === 'excellent') {
-      insights.push('System operating at optimal data quality levels');
-      recommendations.push('Continue current data management practices');
+      insights.push('O sistema está operando com qualidade de dados ideal.');
+      recommendations.push('Continuar com as práticas atuais de gestão de dados.');
     }
 
     return { insights, recommendations };
@@ -950,12 +978,12 @@ class MunicipalAnalysisEngine {
 
   getIssueSpecificRecommendation(issue) {
     const recommendations = {
-      'Segurança': 'Coordinate with public security for enhanced safety measures',
-      'Saúde': 'Review healthcare service capacity and accessibility',
-      'Transporte': 'Analyze public transportation routes and frequency',
-      'Educação': 'Assess educational facility capacity and quality',
-      'Emprego': 'Develop job creation and economic development programs',
-      'Outros': 'Conduct detailed analysis of custom issue responses'
+      'Segurança': 'Coordenação urgente com a segurança pública para implementar medidas de segurança aprimoradas. Organizar reuniões com comandantes locais e propor ações específicas.',
+      'Saúde': 'Revisar a capacidade e acessibilidade dos serviços de saúde. Verificar se há falta de médicos, medicamentos ou equipamentos nos postos de saúde.',
+      'Transporte': 'Analisar as rotas e frequência do transporte público. Verificar se os horários atendem às necessidades dos cidadãos e se há pontos de ônibus em áreas necessitadas.',
+      'Educação': 'Avaliar a capacidade e qualidade das escolas municipais. Verificar se há falta de vagas, professores ou materiais escolares.',
+      'Emprego': 'Desenvolver programas de geração de emprego e desenvolvimento econômico. Criar oportunidades de capacitação e parcerias com empresas locais.',
+      'Outros': 'Analisar detalhadamente as respostas personalizadas dos cidadãos para identificar problemas específicos que precisam de atenção.'
     };
     
     return recommendations[issue] || null;

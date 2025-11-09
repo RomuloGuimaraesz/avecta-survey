@@ -6,6 +6,8 @@
 import { ReactiveComponent } from '../base/ReactiveComponent.js';
 import { EventEmitterMixin } from '../mixins/EventEmitterMixin.js';
 import { html, css } from '../utils/html.js';
+import { QueryProcessor } from '../../infrastructure/services/QueryProcessor.js';
+import { QUERY_TEMPLATES, getQueryTemplateByQuery } from '../../shared/queryTemplates.js';
 
 export class AIChat extends EventEmitterMixin(ReactiveComponent) {
   constructor() {
@@ -27,6 +29,9 @@ export class AIChat extends EventEmitterMixin(ReactiveComponent) {
     // Dependencies (to be injected)
     this.processAIQueryUseCase = null;
     this.toastManager = null;
+
+    // Query processor for normalization and validation
+    this.queryProcessor = new QueryProcessor();
 
     // Internal state
     this._initialMessageAdded = false;
@@ -122,13 +127,31 @@ export class AIChat extends EventEmitterMixin(ReactiveComponent) {
   async sendMessage(messageText = null) {
     const input = this.$('.chat-input');
     const sendBtn = this.$('.send-button');
-    const message = messageText || (input ? input.value.trim() : '');
+    const rawMessage = messageText || (input ? input.value.trim() : '');
 
     // Check if input is disabled (processing) or message is empty
-    if (!message || (sendBtn && sendBtn.disabled)) return;
+    if (!rawMessage || (sendBtn && sendBtn.disabled)) return;
 
-    // Add user message
-    this.addMessage(message, 'user');
+    // Process query through QueryProcessor
+    const processed = this.queryProcessor.process(rawMessage);
+
+    // Validate query
+    if (processed.error) {
+      console.warn('[AIChat] Query validation error:', processed.error);
+      if (this.toastManager) {
+        this.toastManager.show(processed.error, 'warning');
+      }
+      return;
+    }
+
+    // Check for special handlers (e.g., age report)
+    if (processed.hasSpecialHandler && processed.handlerType === 'age_report') {
+      this.showAgeReportPreview();
+      return;
+    }
+
+    // Add user message (use normalized query)
+    this.addMessage(processed.normalized, 'user');
 
     // Clear input
     if (input) {
@@ -136,8 +159,8 @@ export class AIChat extends EventEmitterMixin(ReactiveComponent) {
       this.autoResize(input);
     }
 
-    // Process message
-    await this.processMessage(message);
+    // Process message with normalized query
+    await this.processMessage(processed.normalized);
   }
 
   /**
@@ -296,19 +319,30 @@ export class AIChat extends EventEmitterMixin(ReactiveComponent) {
     const residents = Array.isArray(result.residents) ? result.residents : [];
     let summaryText = result.response || 'Query processed successfully';
 
-    if (residents.length) {
-      const list = residents.map((r, idx) =>
-        `${idx + 1}. ${r.name} (${r.neighborhood || '—'})${r.satisfaction ? ` • ${r.satisfaction}` : ''}`
-      ).join('\n');
-      summaryText += `\n\nRESIDENTES (${residents.length}):\n${list}`;
-    }
+    // Don't add residents to summary text - they'll be displayed separately
+    // if (residents.length) {
+    //   const list = residents.map((r, idx) =>
+    //     `${idx + 1}. ${r.name} (${r.neighborhood || '—'})${r.satisfaction ? ` • ${r.satisfaction}` : ''}`
+    //   ).join('\n');
+    //   summaryText += `\n\nRESIDENTES (${residents.length}):\n${list}`;
+    // }
 
     const analysisPayload = {
       analysis: {
         summary: summaryText,
         residents,
         insights: Array.isArray(result.insights) ? result.insights : [],
-        recommendations: Array.isArray(result.recommendations) ? result.recommendations : []
+        recommendations: Array.isArray(result.recommendations) ? result.recommendations : [],
+        statistics: result.statistics || null,
+        report: result.report || null
+      },
+      metadata: {
+        llmEnhanced: result.llmEnhanced || false,
+        provider: result.provider || null,
+        model: result.model || null,
+        responseQuality: result.responseQuality || 'data-driven',
+        provenance: result.provenance || null,
+        processingTime: processingTime
       }
     };
 
@@ -329,7 +363,11 @@ export class AIChat extends EventEmitterMixin(ReactiveComponent) {
       agent: result.intent ? `${result.intent.charAt(0).toUpperCase() + result.intent.slice(1)} Agent` : 'AI Assistant',
       intent: result.intent,
       timestamp: result.timestamp,
-      confidence: result.confidence
+      confidence: result.confidence,
+      llmEnhanced: result.llmEnhanced || false,
+      provider: result.provider,
+      model: result.model,
+      responseQuality: result.responseQuality || 'data-driven'
     });
 
     this.updateStatus(`Agente ${result.intent ? result.intent.charAt(0).toUpperCase() + result.intent.slice(1) : 'IA'} Pronto`);
@@ -433,23 +471,18 @@ export class AIChat extends EventEmitterMixin(ReactiveComponent) {
     if (this._initialMessageAdded) return;
     this._initialMessageAdded = true;
 
+    // Get suggestions from query templates
+    const suggestions = QUERY_TEMPLATES.map(template => template.query);
+
     this.addMessage({
       type: 'welcome',
       text: 'Sou o Assistente de IA da AvectaAI! Tenho acesso aos dados reais de pesquisa e posso ajudar com:',
       features: [
         { icon: '📊', title: 'Agente de Conhecimento', items: 'Análise de Satisfação, Análise de Problemas, Análise de Bairros' },
         { icon: '📱', title: 'Agente de Notificação', items: 'Notificações de Atualizações, Notificações Generalistas, Notificações Segmentadas' },
-        { icon: '🎫', title: 'Agente de Sistema', items: 'Status do Sistema, Dados e Informações, Exportações' }
+        { icon: '🎫', title: 'Agente de Sistema', items: 'Dados e Informações, Exportações' }
       ],
-      suggestions: [
-        'Mostrar análise de satisfação',
-        'Encontrar moradores insatisfeitos',
-        'Quais bairros precisam de acompanhamento',
-        'Status do sistema',
-        'Listar moradores interessados em participar',
-        'Mostrar moradores que não querem participar',
-        'Relatório: Satisfação por idade'
-      ]
+      suggestions: suggestions
     }, 'bot', {
       agent: 'System'
     });
@@ -502,20 +535,32 @@ export class AIChat extends EventEmitterMixin(ReactiveComponent) {
   }
 
   handleQuickSuggestion(message) {
-    // Special client-side commands
-    if (message.toLowerCase().includes('relatório: satisfação por idade')) {
+    // Process query through QueryProcessor
+    const processed = this.queryProcessor.process(message);
+
+    // Check for special handlers (e.g., age report)
+    if (processed.hasSpecialHandler && processed.handlerType === 'age_report') {
       this.showAgeReportPreview();
+      return;
+    }
+
+    // Validate query
+    if (processed.error) {
+      console.warn('[AIChat] Query validation error:', processed.error);
+      if (this.toastManager) {
+        this.toastManager.show(processed.error, 'warning');
+      }
       return;
     }
 
     const input = this.$('.chat-input');
     if (input) {
-      input.value = message;
+      input.value = processed.normalized;
     }
     if (!this.isOpen) {
       this.openChat();
     }
-    this.sendMessage(message);
+    this.sendMessage(processed.normalized);
   }
 
   // ========== Rendering ==========
@@ -544,6 +589,12 @@ export class AIChat extends EventEmitterMixin(ReactiveComponent) {
           </div>
 
           <div class="chat-input-container">
+            <div class="quick-suggestions">
+              ${QUERY_TEMPLATES.map(template => html`
+                <button class="quick-suggestion" data-message="${template.query}">${template.label}</button>
+              `)}
+            </div>
+
             <div class="typing-indicator" style="display: none;">
               <div class="message-avatar">🤖</div>
               <div class="typing-dots">
@@ -587,11 +638,6 @@ export class AIChat extends EventEmitterMixin(ReactiveComponent) {
             <li>${f.icon} <strong>${f.title}</strong> - ${f.items}</li>
           `)}
         </ul>
-        <div class="quick-suggestions">
-          ${content.suggestions.map(s => html`
-            <button class="quick-suggestion" data-message="${s}">${this.getButtonLabel(s)}</button>
-          `)}
-        </div>
       `;
     }
 
@@ -625,23 +671,101 @@ export class AIChat extends EventEmitterMixin(ReactiveComponent) {
     // Handle analysis payload
     if (typeof content === 'object' && content.analysis) {
       const analysis = content.analysis;
+      const metadata = content.metadata || {};
       let result = '';
 
+      // LLM Enhancement Badge
+      if (metadata.llmEnhanced) {
+        const provider = metadata.provider || 'LLM';
+        const model = metadata.model ? ` (${metadata.model})` : '';
+        result += `<div class="llm-badge">
+          <span class="llm-icon">✨</span>
+          <span class="llm-text">Melhorado por ${provider}${model}</span>
+          <span class="quality-badge quality-${metadata.responseQuality || 'data-driven'}">${metadata.responseQuality || 'data-driven'}</span>
+        </div>`;
+      }
+
+      // Summary text
       if (analysis.summary) {
         result += `<div class="summary-box">${analysis.summary.replace(/\n/g, '<br>')}</div>`;
       }
 
-      if (Array.isArray(analysis.residents) && analysis.residents.length > 0) {
-        result += `<div class="mt-12"><strong>Lista de residentes:</strong><ul class="list-offset">`;
-        analysis.residents.forEach(r => {
-          result += `<li><strong>${r.name}</strong> (${r.neighborhood || '—'})<br>`;
-          result += `Satisfação: <span class="metric-highlight">${r.satisfaction || '—'}</span>`;
-          if (r.whatsapp) {
-            result += `<br>WhatsApp: <a href="https://wa.me/${r.whatsapp.replace(/\D/g, '')}" target="_blank">${r.whatsapp}</a>`;
-          }
-          result += `</li>`;
+      // Statistics display
+      if (analysis.statistics) {
+        result += `<div class="statistics-box mt-12">
+          <h4 class="section-title">📊 Estatísticas</h4>`;
+        if (analysis.statistics.totalContacts) {
+          result += `<div class="stat-item">
+            <span class="stat-label">Total de Contatos:</span>
+            <span class="stat-value">${analysis.statistics.totalContacts}</span>
+          </div>`;
+        }
+        if (analysis.statistics.responseRate !== undefined) {
+          result += `<div class="stat-item">
+            <span class="stat-label">Taxa de Resposta:</span>
+            <span class="stat-value">${analysis.statistics.responseRate}%</span>
+          </div>`;
+        }
+        if (analysis.statistics.satisfactionScore !== undefined) {
+          result += `<div class="stat-item">
+            <span class="stat-label">Satisfação Média:</span>
+            <span class="stat-value">${analysis.statistics.satisfactionScore}/5</span>
+          </div>`;
+        }
+        result += `</div>`;
+      }
+
+      // Insights display
+      if (Array.isArray(analysis.insights) && analysis.insights.length > 0) {
+        result += `<div class="insights-box mt-12">
+          <h4 class="section-title">💡 Insights</h4>
+          <ul class="insights-list">`;
+        analysis.insights.forEach((insight, idx) => {
+          const insightText = typeof insight === 'object' ? (insight.content || insight.insight || insight) : insight;
+          result += `<li class="insight-item">
+            <span class="insight-icon">${idx + 1}</span>
+            <span class="insight-text">${insightText}</span>
+          </li>`;
         });
         result += `</ul></div>`;
+      }
+
+      // Recommendations display
+      if (Array.isArray(analysis.recommendations) && analysis.recommendations.length > 0) {
+        result += `<div class="recommendations-box mt-12">
+          <h4 class="section-title">🎯 Recomendações</h4>
+          <ul class="recommendations-list">`;
+        analysis.recommendations.forEach((rec, idx) => {
+          const recText = typeof rec === 'object' ? (rec.content || rec.recommendation || rec) : rec;
+          result += `<li class="recommendation-item">
+            <span class="recommendation-icon">✓</span>
+            <span class="recommendation-text">${recText}</span>
+          </li>`;
+        });
+        result += `</ul></div>`;
+      }
+
+      // Residents list
+      if (Array.isArray(analysis.residents) && analysis.residents.length > 0) {
+        result += `<div class="residents-box mt-12">
+          <h4 class="section-title">👥 Residentes (${analysis.residents.length})</h4>
+          <ul class="list-offset">`;
+        analysis.residents.forEach(r => {
+          result += `<li class="resident-item">
+            <strong>${r.name || '—'}</strong>
+            ${r.neighborhood ? `<span class="neighborhood-badge">${r.neighborhood}</span>` : ''}
+            ${r.satisfaction ? `<br>Satisfação: <span class="metric-highlight">${r.satisfaction}</span>` : ''}
+            ${r.issue ? `<br>Questão: <span class="metric-highlight">${r.issue}</span>` : ''}
+            ${r.whatsapp ? `<br>WhatsApp: <a href="https://wa.me/${r.whatsapp.replace(/\D/g, '')}" target="_blank" class="whatsapp-link">${r.whatsapp}</a>` : ''}
+          </li>`;
+        });
+        result += `</ul></div>`;
+      }
+
+      // Processing time
+      if (metadata.processingTime) {
+        const seconds = (metadata.processingTime / 1000).toFixed(1);
+        result += `<div class="processing-time">Processado em ${seconds}s</div>`;
       }
 
       return result;
@@ -654,6 +778,10 @@ export class AIChat extends EventEmitterMixin(ReactiveComponent) {
     const parts = [];
     if (metadata.intent) parts.push(`Intent: ${metadata.intent}`);
     if (metadata.confidence) parts.push(`Confidence: ${(metadata.confidence * 100).toFixed(0)}%`);
+    if (metadata.llmEnhanced) {
+      const provider = metadata.provider || 'LLM';
+      parts.push(`Enhanced by ${provider}`);
+    }
     if (metadata.timestamp) {
       const time = new Date(metadata.timestamp).toLocaleTimeString();
       parts.push(`Time: ${time}`);
@@ -662,27 +790,21 @@ export class AIChat extends EventEmitterMixin(ReactiveComponent) {
   }
 
   getButtonLabel(message) {
-    const labels = {
-      'Mostrar análise de satisfação': 'Análise de Satisfação',
-      'Encontrar moradores insatisfeitos': 'Análise de Insatisfação',
-      'Quais bairros precisam de acompanhamento': 'Análise de Bairros',
-      'Status do sistema': 'Status do Sistema',
-      'Listar moradores interessados em participar': 'Participação: interessados',
-      'Mostrar moradores que não querem participar': 'Participação: não interessados'
-    };
-    return labels[message] || message;
+    // Get label from query template
+    const template = getQueryTemplateByQuery(message);
+    return template ? template.label : message;
   }
 
   /**
    * Attach event listeners after render
+   * Note: Quick suggestion buttons are handled by attachMessageEventListeners()
+   * when messages are appended, so we don't duplicate that logic here.
    */
   attachRenderedEventListeners() {
     const toggle = this.$('.chat-toggle');
     const close = this.$('.chat-close');
     const sendBtn = this.$('.send-button');
     const input = this.$('.chat-input');
-    const suggestions = this.$$('.quick-suggestion');
-    const openAgeReportBtn = this.$('[data-open-age-report]');
 
     if (toggle) {
       toggle.addEventListener('click', (e) => this.handleToggleClick(e));
@@ -701,7 +823,9 @@ export class AIChat extends EventEmitterMixin(ReactiveComponent) {
       input.addEventListener('input', (e) => this.handleInputChange(e));
     }
 
-    suggestions.forEach(btn => {
+    // Attach listeners to quick suggestion buttons in the input container
+    const quickSuggestions = this.shadowRoot.querySelectorAll('.chat-input-container .quick-suggestion');
+    quickSuggestions.forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -710,12 +834,19 @@ export class AIChat extends EventEmitterMixin(ReactiveComponent) {
       });
     });
 
-    if (openAgeReportBtn) {
-      openAgeReportBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        window.open('age-satisfaction.html', '_blank');
-      });
+    // Attach listeners to age report buttons that may exist in messages
+    // (these are handled per-message by attachMessageEventListeners, but we
+    // also check here in case they exist in the initial render)
+    const messagesContainer = this.$('.chat-messages');
+    if (messagesContainer) {
+      const openAgeReportBtn = messagesContainer.querySelector('[data-open-age-report]');
+      if (openAgeReportBtn) {
+        openAgeReportBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          window.open('age-satisfaction.html', '_blank');
+        });
+      }
     }
   }
 
@@ -759,8 +890,8 @@ export class AIChat extends EventEmitterMixin(ReactiveComponent) {
       }
 
       .chat-toggle img {
-        width: 24px;
-        height: 24px;
+        width: 18px;
+        height: 18px;
       }
 
       .notification-badge {
@@ -966,6 +1097,8 @@ export class AIChat extends EventEmitterMixin(ReactiveComponent) {
         padding: 16px;
         border-top: 1px solid #e1e5e9;
         background: white;
+        display: flex;
+        flex-direction: column;
       }
 
       .typing-indicator {
@@ -1080,10 +1213,15 @@ export class AIChat extends EventEmitterMixin(ReactiveComponent) {
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
-        margin-top: 12px;
+        margin-bottom: 12px;
         position: relative;
         z-index: 100;
         isolation: isolate;
+      }
+
+      .chat-input-container .quick-suggestions {
+        margin-top: 0;
+        margin-bottom: 12px;
       }
 
       .quick-suggestion {
@@ -1190,6 +1328,236 @@ export class AIChat extends EventEmitterMixin(ReactiveComponent) {
 
       li {
         margin: 6px 0;
+      }
+
+      /* LLM Enhancement Badge */
+      .llm-badge {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: linear-gradient(135deg, #fff5e6 0%, #ffe8cc 100%);
+        border: 1px solid #ffd89b;
+        border-radius: 8px;
+        padding: 8px 12px;
+        margin-bottom: 12px;
+        font-size: 12px;
+      }
+
+      .llm-icon {
+        font-size: 16px;
+      }
+
+      .llm-text {
+        flex: 1;
+        color: #d97706;
+        font-weight: 600;
+      }
+
+      .quality-badge {
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+      }
+
+      .quality-badge.quality-llm-enhanced {
+        background: #dbeafe;
+        color: #1e40af;
+      }
+
+      .quality-badge.quality-data-driven {
+        background: #f3f4f6;
+        color: #4b5563;
+      }
+
+      .quality-badge.quality-excellent {
+        background: #d1fae5;
+        color: #065f46;
+      }
+
+      .quality-badge.quality-good {
+        background: #dbeafe;
+        color: #1e40af;
+      }
+
+      /* Statistics Box */
+      .statistics-box {
+        background: #f0f9ff;
+        border: 1px solid #bae6fd;
+        border-radius: 8px;
+        padding: 12px;
+      }
+
+      .section-title {
+        font-size: 14px;
+        font-weight: 600;
+        margin: 0 0 10px 0;
+        color: #0369a1;
+      }
+
+      .stat-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 6px 0;
+        border-bottom: 1px solid #e0f2fe;
+      }
+
+      .stat-item:last-child {
+        border-bottom: none;
+      }
+
+      .stat-label {
+        color: #64748b;
+        font-size: 13px;
+      }
+
+      .stat-value {
+        font-weight: 600;
+        color: #0369a1;
+        font-size: 14px;
+      }
+
+      /* Insights Box */
+      .insights-box {
+        background: #fefce8;
+        border: 1px solid #fde047;
+        border-radius: 8px;
+        padding: 12px;
+      }
+
+      .insights-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+
+      .insight-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 8px 0;
+        border-bottom: 1px solid #fef3c7;
+      }
+
+      .insight-item:last-child {
+        border-bottom: none;
+      }
+
+      .insight-icon {
+        background: #fbbf24;
+        color: white;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        font-weight: 600;
+        flex-shrink: 0;
+      }
+
+      .insight-text {
+        flex: 1;
+        color: #78350f;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      /* Recommendations Box */
+      .recommendations-box {
+        background: #f0fdf4;
+        border: 1px solid #86efac;
+        border-radius: 8px;
+        padding: 12px;
+      }
+
+      .recommendations-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+
+      .recommendation-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 8px 0;
+        border-bottom: 1px solid #d1fae5;
+      }
+
+      .recommendation-item:last-child {
+        border-bottom: none;
+      }
+
+      .recommendation-icon {
+        background: #10b981;
+        color: white;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        font-weight: 600;
+        flex-shrink: 0;
+      }
+
+      .recommendation-text {
+        flex: 1;
+        color: #065f46;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      /* Residents Box */
+      .residents-box {
+        background: #faf5ff;
+        border: 1px solid #d8b4fe;
+        border-radius: 8px;
+        padding: 12px;
+      }
+
+      .resident-item {
+        padding: 10px 0;
+        border-bottom: 1px solid #f3e8ff;
+      }
+
+      .resident-item:last-child {
+        border-bottom: none;
+      }
+
+      .neighborhood-badge {
+        display: inline-block;
+        background: #e9d5ff;
+        color: #7c3aed;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 600;
+        margin-left: 8px;
+      }
+
+      .whatsapp-link {
+        color: #25d366;
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      .whatsapp-link:hover {
+        text-decoration: underline;
+      }
+
+      /* Processing Time */
+      .processing-time {
+        font-size: 11px;
+        color: #94a3b8;
+        text-align: right;
+        margin-top: 8px;
+        font-style: italic;
       }
 
       /* Responsive */

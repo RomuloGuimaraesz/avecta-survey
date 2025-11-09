@@ -46,4 +46,13 @@ export class ICitizenRepository {
   async exportToCSV() {
     throw new Error('Method not implemented: exportToCSV');
   }
+
+  /**
+   * Delete a citizen by ID
+   * @param {number} id
+   * @returns {Promise<boolean>}
+   */
+  async delete(id) {
+    throw new Error('Method not implemented: delete');
+  }
 }

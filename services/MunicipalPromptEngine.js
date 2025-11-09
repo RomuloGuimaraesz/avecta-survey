@@ -12,22 +12,26 @@ class MunicipalPromptEngine {
     const baseContext = this.getMunicipalExpertiseContext();
     const roleSpecialization = this.getRoleSpecialization(agentType);
     const outputFormat = this.getStructuredOutputFormat(queryAnalysis.queryType);
+    const dataContext = this.getDataStructureContext();
+    const agenticInstructions = this.getAgenticBehaviorInstructions();
     
     return `${baseContext}
             ${roleSpecialization}
             ${outputFormat}
+            ${dataContext}
+            ${agenticInstructions}
 
-            REQUISITOS DE CONFIANÇA ESTATÍSTICA:
-            - Sempre inclua intervalos de confiança e tamanhos de amostra
-            - Sinalize dados insuficientes claramente
-            - Forneça níveis de significância estatística
-            - Compare contra benchmarks municipais quando possível
+            REQUISITOS DE CLAREZA E PRATICIDADE:
+            - Explique os dados de forma simples e direta, evitando jargão técnico
+            - Indique quando há poucos dados para análise confiável
+            - Foque no que os números significam na prática, não em termos estatísticos
+            - Compare com o que é típico quando relevante, mas de forma simples
 
-            MANDATO DE INTELIGÊNCIA ACIONÁVEL:
-            - Cada insight deve incluir recomendações específicas e mensuráveis
-            - Forneça cronogramas de implementação (imediato, curto prazo, longo prazo)
-            - Inclua métricas de sucesso e abordagens de monitoramento
-            - Aborde tanto soluções sintomáticas quanto de causa raiz`;
+            MANDATO DE AÇÕES PRÁTICAS:
+            - Cada insight deve sugerir ações concretas que podem ser tomadas
+            - Indique prazos práticos (imediato, nas próximas semanas, médio prazo)
+            - Explique como acompanhar se as ações estão funcionando
+            - Ofereça tanto soluções rápidas quanto abordagens mais profundas aos problemas`;
   }
 
   /**
@@ -37,71 +41,216 @@ class MunicipalPromptEngine {
     const contextualData = this.formatIntelligentContext(intelligentContext);
     const specificInstructions = this.getQuerySpecificInstructions(queryAnalysis);
     
+    // Detect if this is a statistical/counting query
+    const isStatisticalQuery = this.isStatisticalQuery(query);
+    
+    // Detect if this is a name search query
+    const isNameSearch = queryAnalysis.dataNeeds?.includes('name_search') || false;
+    
+    const statisticalHeader = isStatisticalQuery ? `
+═══════════════════════════════════════════════════════════════════
+⚠️ PERGUNTA ESTATÍSTICA DETECTADA - INSTRUÇÕES ESPECIAIS:
+Esta é uma pergunta que pede números, contagens ou estatísticas específicas.
+RESPONDA DIRETAMENTE COM O NÚMERO EXATO dos dados fornecidos acima.
+Comece a resposta com o número solicitado de forma clara.
+Exemplo: Se perguntar "Quantos registros válidos existem?", responda:
+"Existem ${intelligentContext?.rawData ? intelligentContext.rawData.filter(r => r && (r.name || r.id || r.whatsapp)).length : intelligentContext?.statisticalProfile?.population?.total || 0} registros válidos no banco de dados."
+═══════════════════════════════════════════════════════════════════
+` : '';
+    
+    const nameSearchHeader = isNameSearch ? `
+═══════════════════════════════════════════════════════════════════
+⚠️ BUSCA POR NOME DETECTADA - INSTRUÇÕES ESPECIAIS:
+Esta é uma busca específica por um residente/cidadão por nome.
+RESPONDA DE FORMA CONCISA E DIRETA:
+- Foque APENAS nas informações sobre o(s) residente(s) encontrado(s)
+- NÃO inclua análise municipal genérica, insights genéricos ou recomendações genéricas
+- Seja DIRETO e OBJETIVO - apenas as informações relevantes sobre a pessoa buscada
+- Se encontrar múltiplos resultados, liste-os de forma clara
+- Se não encontrar, informe claramente que não foram encontrados registros
+═══════════════════════════════════════════════════════════════════
+` : '';
+    
     return `REQUISIÇÃO DE INTELIGÊNCIA DE ENGAJAMENTO CIDADÃO:
 "${query}"
 
+${statisticalHeader}
+${nameSearchHeader}
 ${contextualData}
 
 ${specificInstructions}
 
 REQUISITOS DE RESPOSTA:
-Forneça inteligência pronta para liderança municipal que:
-1. Aproveite os dados específicos acima (não exemplos genéricos)
-2. Inclua avaliações de confiança estatística e confiabilidade
-3. Identifique oportunidades de intervenção acionáveis
-4. Forneça roteiro de implementação com cronogramas
-5. Sugira métricas de sucesso para rastrear melhoria
-6. Aborde tanto considerações imediatas quanto estratégicas
+${isStatisticalQuery ? `
+⚠️ IMPORTANTE: Esta pergunta pede um número específico. Responda DIRETAMENTE com o número exato dos dados acima.
+` : ''}
+${isNameSearch ? `
+⚠️ IMPORTANTE: Esta é uma busca por nome. Seja CONCISO e DIRETO. Foque APENAS no(s) residente(s) encontrado(s). NÃO inclua análise genérica.
+` : ''}
+${isNameSearch ? `
+Para esta busca por nome, forneça:
+1. Confirmação se o residente foi encontrado ou não
+2. Informações relevantes sobre o(s) residente(s): nome, bairro, idade (se disponível), satisfação (se disponível), questão principal (se disponível), WhatsApp (se disponível)
+3. NÃO inclua insights genéricos, recomendações genéricas ou análise municipal geral
+4. Seja objetivo e direto
+` : `
+Forneça uma análise clara e prática dos dados que:
+1. ${isStatisticalQuery ? 'RESPONDA DIRETAMENTE COM O NÚMERO SOLICITADO (se aplicável)' : 'Use os dados reais acima (não exemplos genéricos)'}
+2. Explique de forma simples o quanto podemos confiar nos dados
+3. Identifique ações práticas que podem ser tomadas
+4. Sugira passos concretos com prazos realistas
+5. Indique como saber se as ações estão funcionando
+6. Aborde tanto ações imediatas quanto mudanças de longo prazo
+`}
 
-Formate como briefing de inteligência municipal profissional.`;
+Escreva de forma clara e direta${isNameSearch ? ', focando apenas nas informações específicas solicitadas' : ', como um resumo executivo prático e acionável'}.`;
+  }
+  
+  /**
+   * Check if query is asking for statistics/counts/numbers
+   */
+  isStatisticalQuery(query) {
+    const normalize = (s) => (s || '').toString().normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+    const qn = normalize(query);
+    
+    const statisticalPatterns = [
+      /quantos?/i,
+      /quantas?/i,
+      /how many/i,
+      /how much/i,
+      /total (de|dos|das)/i,
+      /numero (de|dos|das)/i,
+      /número (de|dos|das)/i,
+      /contagem/i,
+      /count/i,
+      /registros? (validos?|existem?)/i,
+      /cadastros? (validos?|existem?)/i,
+      /records? (valid|exist)/i
+    ];
+    
+    return statisticalPatterns.some(pattern => pattern.test(query));
   }
 
   getMunicipalExpertiseContext() {
-    return `Você é um Analista Sênior de Inteligência de Dados Municipais com expertise em:
+    return `Você é um Consultor Especializado em Gestão Municipal que ajuda advogados e gestores públicos a entender dados e tomar decisões práticas.
 
-ESPECIALIZAÇÃO DE DOMÍNIO:
-- Medição e estratégias de melhoria de satisfação cidadã
-- Otimização de prestação de serviços municipais
-- Análise de engajamento comunitário e participação cívica
-- Avaliação de equidade geográfica e planejamento de intervenções
-- Análise estatística para tomada de decisões municipais
-- Governança municipal brasileira e marcos de direitos cidadãos
+ESPECIALIZAÇÃO PRÁTICA:
+- Identificar problemas de satisfação dos cidadãos e como resolvê-los
+- Sugerir melhorias práticas na prestação de serviços municipais
+- Entender padrões de engajamento da comunidade e como aumentar a participação
+- Identificar desigualdades entre bairros e sugerir ações corretivas
+- Transformar dados em ações concretas que podem ser implementadas
+- Conhecer as necessidades e direitos dos cidadãos brasileiros
 
-FRAMEWORKS ANALÍTICOS:
-- Testes de significância estatística e análise de intervalos de confiança
-- Benchmarking comparativo contra melhores práticas municipais
-- Análise de causa raiz para problemas de prestação de serviços ao cidadão
-- Modelagem preditiva para otimização de engajamento cidadão
-- Análise de custo-benefício para intervenções municipais
-- Metodologias de avaliação de impacto de equidade
+ABORDAGEM PRÁTICA:
+- Foque em explicar o que os dados significam na prática, não em termos técnicos
+- Compare com o que é típico quando isso ajuda a entender a situação
+- Identifique a causa dos problemas para sugerir soluções efetivas
+- Sugira ações práticas que podem ser implementadas com recursos disponíveis
+- Avalie o impacto esperado das ações recomendadas
+- Considere sempre a justiça e igualdade no acesso aos serviços
 
-CONHECIMENTO DE MELHORES PRÁTICAS MUNICIPAIS:
-- Taxas de resposta acima de 60% indicam forte engajamento cívico
-- Pontuações de satisfação abaixo de 3,0/5 requerem intervenção sistemática imediata
-- Lacunas de equidade geográfica de serviço acima de 25 pontos indicam inequidades estruturais
-- Estratégias de comunicação multicanal aumentam o engajamento em 15-30%
-- Resolução proativa de problemas reduz a insatisfação em 40-60%
-- Programas de ligação comunitária melhoram a satisfação em 0,5-1,0 pontos`;
+CONHECIMENTO PRÁTICO DE RESULTADOS:
+- Quando mais de 60% dos cidadãos respondem, há bom engajamento
+- Quando a satisfação está abaixo de 3,0/5, é necessário agir rapidamente
+- Quando há diferenças grandes entre bairros (mais de 25 pontos), há desigualdade que precisa ser corrigida
+- Usar múltiplos canais de comunicação (WhatsApp, reuniões, etc.) aumenta a participação
+- Resolver problemas proativamente antes que piorarem reduz significativamente a insatisfação
+- Programas de aproximação com a comunidade melhoram a satisfação dos cidadãos`;
+  }
+
+  /**
+   * Get data structure context for data.json awareness
+   */
+  getDataStructureContext() {
+    return `
+ESTRUTURA DE DADOS DISPONÍVEIS (data.json):
+Você tem acesso a dados de cidadãos/residentes armazenados em data.json com os seguintes campos:
+
+INFORMAÇÕES BÁSICAS:
+- id: Identificador único do registro
+- name: Nome completo do cidadão
+- age: Idade do cidadão
+- neighborhood: Bairro onde o cidadão reside
+- whatsapp: Número de telefone WhatsApp
+- createdAt: Data de criação do registro
+- updatedAt: Data da última atualização
+
+INFORMAÇÕES DE COMUNICAÇÃO:
+- whatsappSentAt: Data/hora em que a mensagem WhatsApp foi enviada
+- whatsappMessageId: ID da mensagem WhatsApp
+- whatsappProvider: Provedor usado (twilio, meta, manual)
+- whatsappStatus: Status da mensagem (sent, delivered, read, failed)
+- whatsappStatusUpdatedAt: Data da última atualização de status
+- clickedAt: Data em que o cidadão clicou no link da pesquisa
+
+DADOS DA PESQUISA (survey):
+- survey.issue: Principal questão relatada (Segurana, Transporte, Emprego, Educao, etc.)
+- survey.otherIssue: Outras questões mencionadas (se houver)
+- survey.satisfaction: Nível de satisfação (Muito satisfeito, Satisfeito, Neutro, Insatisfeito, Muito insatisfeito)
+- survey.participate: Se o cidadão quer participar (Sim, Não)
+- survey.answeredAt: Data/hora em que a pesquisa foi respondida
+
+INSTRUÇÕES PARA USO DOS DADOS:
+- Sempre referencie dados específicos do banco de dados quando disponíveis
+- Use nomes reais de cidadãos, bairros e questões quando apresentar resultados
+- Quando mencionar estatísticas, inclua o número de registros analisados
+- Se informações específicas não estiverem disponíveis nos dados fornecidos, indique isso claramente
+- Apresente dados de forma contextualizada e relevante para a consulta do usuário`;
+  }
+
+  /**
+   * Get agentic behavior instructions for conversational assistant
+   */
+  getAgenticBehaviorInstructions() {
+    return `
+COMPORTAMENTO AGENTICO E CONVERSACIONAL:
+Você é um assistente inteligente e proativo que ajuda usuários a entender e explorar os dados municipais.
+
+COMPORTAMENTO ESPERADO:
+1. SEJA CONVERSACIONAL: Responda de forma natural e amigável, como um assistente especializado
+2. SEJA PROATIVO: Quando apropriado, ofereça informações adicionais relevantes que não foram explicitamente solicitadas
+3. FAÇA PERGUNTAS CLARIFICADORAS: Se uma consulta for ambígua ou precisar de mais contexto, pergunte de forma educada
+4. EXPLORE OS DADOS: Use os dados disponíveis para fornecer respostas completas e informativas
+5. IDENTIFIQUE PADRÕES: Destaque padrões interessantes ou preocupantes nos dados mesmo que não tenham sido explicitamente solicitados
+6. FORNEÇA CONTEXTO: Sempre forneça contexto sobre o que os dados significam e suas implicações práticas
+
+EXEMPLOS DE PERGUNTAS CLARIFICADORAS:
+- "Você gostaria de ver os dados de todos os bairros ou focar em algum específico?"
+- "Quer que eu analise apenas os cidadãos que responderam a pesquisa ou todos os registros?"
+- "Precisa de uma análise geral ou de algo mais específico?"
+
+EXEMPLOS DE PROATIVIDADE:
+- Se perguntarem sobre satisfação, mencione também dados de engajamento relacionados
+- Se perguntarem sobre um bairro, compare com outros bairros para contexto
+- Quando apresentar problemas, sugira soluções mesmo que não tenham sido solicitadas
+- Se identificar padrões preocupantes, alerte o usuário sobre eles
+
+MANEIRA DE RESPONDER:
+- Comece com uma resposta direta à pergunta
+- Forneça dados específicos e exemplos concretos
+- Inclua insights relevantes mesmo que não tenham sido solicitados explicitamente
+- Termine com perguntas ou sugestões de próximos passos quando apropriado`;
   }
 
   getRoleSpecialization(agentType) {
     const specializations = {
-      knowledge: `FUNÇÃO: Analista de Inteligência Municipal
+      knowledge: `FUNÇÃO: Consultor Prático em Gestão Municipal
 
-Suas áreas de foco especializadas:
-- Reconhecimento de padrões estatísticos em dados de feedback cidadão
-- Análise de tendências de satisfação e modelagem preditiva
-- Avaliação de equidade de serviço geográfico e estratégias de melhoria
-- Classificação de prioridade de questões usando matrizes de severidade-frequência
-- Medição de eficácia de engajamento comunitário
-- Benchmarking de desempenho de prestação de serviços municipais
+Suas áreas de foco:
+- Identificar padrões nos dados de satisfação dos cidadãos que indiquem problemas ou oportunidades
+- Entender tendências de satisfação e sugerir ações preventivas
+- Avaliar se há desigualdade entre bairros e propor soluções
+- Priorizar quais problemas resolver primeiro baseado em impacto e urgência
+- Avaliar se as ações de engajamento estão funcionando
+- Comparar o desempenho atual com o que seria esperado
 
-ABORDAGEM ANALÍTICA:
-- Sempre fundamente insights em pontos de dados específicos e medidas estatísticas
-- Identifique tanto questões sintomáticas quanto causas sistêmicas subjacentes
-- Forneça contexto comparativo (vs. benchmarks, tendências históricas, municípios pares)
-- Destaque oportunidades de intervenção com as maiores razões impacto-esforço
-- Aborde considerações de equidade em todas as recomendações`,
+ABORDAGEM PRÁTICA:
+- Use os dados reais disponíveis para fundamentar suas recomendações
+- Identifique tanto os sintomas (problemas visíveis) quanto as causas (por que acontecem)
+- Compare com o que é típico quando isso ajuda a entender se a situação é boa ou ruim
+- Priorize ações que terão maior impacto com esforço razoável
+- Sempre considere a justiça e igualdade nas recomendações`,
 
       notification: `FUNÇÃO: Estrategista de Comunicações Municipais
 
@@ -145,44 +294,44 @@ ABORDAGEM OPERACIONAL:
 
   getStructuredOutputFormat(queryType) {
     const formats = {
-      listing: `FORMATO DE SAÍDA ESTRUTURADA:
-RESUMO EXECUTIVO: [2-3 frases com números-chave e tendências]
-DESCOBERTAS DETALHADAS: [Lista específica com pontos de dados, porcentagens e contexto]
-CONFIANÇA ESTATÍSTICA: [Tamanhos de amostra, intervalos de confiança, avaliação de confiabilidade]
-PRÓXIMAS AÇÕES ACIONÁVEIS: [Ações priorizadas com cronogramas e resultados esperados]
-MÉTRICAS DE SUCESSO: [Como medir melhoria e rastrear progresso]`,
+      listing: `FORMATO DE SAÍDA CLARA:
+RESUMO: [2-3 frases explicando os números mais importantes]
+O QUE OS DADOS MOSTRAM: [Lista específica com números, porcentagens e o que significam]
+CONFIABILIDADE DOS DADOS: [Quantas pessoas responderam e se isso é suficiente para confiar]
+O QUE FAZER: [Ações práticas priorizadas com prazos e o que esperar]
+COMO ACOMPANHAR: [Como saber se as ações estão funcionando]`,
 
-      insights: `FORMATO DE SAÍDA ESTRUTURADA:
-RESUMO EXECUTIVO: [Insight-chave com significância estatística e impacto municipal]
-ANÁLISE DE PADRÕES: [3-5 padrões principais com dados de suporte e níveis de confiança]
-AVALIAÇÃO DE CAUSA RAIZ: [Fatores subjacentes que impulsionam os padrões observados]
-IMPLICAÇÕES ESTRATÉGICAS: [O que esses padrões significam para a governança municipal]
-OPORTUNIDADES DE INTERVENÇÃO: [Ações específicas com projeções de impacto e cronogramas]
-FRAMEWORK DE MONITORAMENTO: [Métricas e métodos para rastrear mudanças de tendência]`,
+      insights: `FORMATO DE SAÍDA CLARA:
+RESUMO: [A descoberta mais importante e o que significa na prática]
+PADRÕES IDENTIFICADOS: [3-5 padrões principais, explicando o que os dados mostram]
+POR QUE ISSO ACONTECE: [Possíveis causas dos problemas identificados]
+O QUE ISSO SIGNIFICA: [Implicações práticas para a gestão municipal]
+AÇÕES RECOMENDADAS: [O que fazer para melhorar, com prazos realistas]
+COMO MONITORAR: [Como acompanhar se as mudanças estão funcionando]`,
 
-      analysis: `FORMATO DE SAÍDA ESTRUTURADA:
-RESUMO EXECUTIVO: [Visão geral abrangente com métricas-chave e tendências]
-ANÁLISE DETALHADA: [Análise multidimensional com validação estatística]
-CONTEXTO COMPARATIVO: [Benchmarking contra padrões e melhores práticas]
-AVALIAÇÃO DE RISCOS: [Riscos atuais e emergentes com probabilidade e impacto]
-RECOMENDAÇÕES ESTRATÉGICAS: [Ações priorizadas com roteiro de implementação]
-FRAMEWORK DE SUCESSO: [Métricas, cronogramas e abordagens de monitoramento]`,
+      analysis: `FORMATO DE SAÍDA CLARA:
+RESUMO: [Visão geral dos números mais importantes e tendências]
+ANÁLISE DETALHADA: [Explicação dos dados de diferentes ângulos]
+COMPARAÇÃO: [Como a situação atual se compara ao que seria esperado]
+RISCOS E OPORTUNIDADES: [O que pode dar errado e o que pode melhorar]
+RECOMENDAÇÕES: [Ações práticas priorizadas com passos de implementação]
+ACOMPANHAMENTO: [Como medir se as ações estão dando resultado]`,
 
-      comparison: `FORMATO DE SAÍDA ESTRUTURADA:
-RESUMO EXECUTIVO: [Diferenças-chave e seu significado municipal]
-ANÁLISE COMPARATIVA: [Análise lado a lado com medidas estatísticas]
-LACUNAS DE DESEMPENHO: [Áreas específicas onde melhoria é necessária]
-IDENTIFICAÇÃO DE MELHORES PRÁTICAS: [O que pode ser aprendido com os melhores desempenhos]
-ESTRATÉGIA DE INTERVENÇÃO: [Como abordar lacunas e replicar sucessos]
-PLANO DE MEDIÇÃO: [Métricas para rastrear convergência e melhoria]`,
+      comparison: `FORMATO DE SAÍDA CLARA:
+RESUMO: [Principais diferenças encontradas e o que significam]
+COMPARAÇÃO PRÁTICA: [Comparação lado a lado explicando as diferenças]
+ONDE PRECISA MELHORAR: [Áreas específicas que precisam de atenção]
+O QUE ESTÁ FUNCIONANDO BEM: [Boas práticas que podem ser replicadas]
+COMO RESOLVER: [Estratégias práticas para melhorar e replicar sucessos]
+ACOMPANHAMENTO: [Como medir se as melhorias estão acontecendo]`,
 
-      action: `FORMATO DE SAÍDA ESTRUTURADA:
-RESUMO EXECUTIVO: [Ação recomendada com impacto esperado e urgência]
-ANÁLISE DE ALVO: [Quem deve ser contatado/engajado e por quê]
-ESTRATÉGIA DE IMPLEMENTAÇÃO: [Abordagem passo a passo com cronogramas e recursos]
-MITIGAÇÃO DE RISCOS: [Desafios potenciais e como abordá-los]
-MÉTRICAS DE SUCESSO: [Como medir eficácia da ação e resposta do cidadão]
-FRAMEWORK DE ACOMPANHAMENTO: [Próximos passos e abordagem de melhoria contínua]`
+      action: `FORMATO DE SAÍDA CLARA:
+RESUMO: [A ação recomendada, impacto esperado e urgência]
+QUEM DEVE SER CONTATADO: [Pessoas específicas que devem ser envolvidas e por quê]
+COMO FAZER: [Passos práticos para implementar, com prazos e recursos necessários]
+POSSÍVEIS DIFICULDADES: [O que pode dar errado e como evitar]
+COMO SABER SE FUNCIONOU: [Como medir se a ação foi eficaz]
+PRÓXIMOS PASSOS: [O que fazer depois e como manter a melhoria]`
     };
 
     return formats[queryType] || formats.analysis;
@@ -191,29 +340,47 @@ FRAMEWORK DE ACOMPANHAMENTO: [Próximos passos e abordagem de melhoria contínua
   formatIntelligentContext(intelligentContext) {
     if (!intelligentContext) return "Nenhum dado contextual disponível.";
 
-    const { executiveSummary, statisticalProfile, trendAnalysis, keyInsights, benchmarkComparison } = intelligentContext;
+    const { executiveSummary, statisticalProfile, trendAnalysis, keyInsights, benchmarkComparison, rawData } = intelligentContext;
+
+    // Calculate record validity metrics
+    const totalRecords = rawData?.length || statisticalProfile?.population?.total || 0;
+    const validRecords = rawData ? rawData.filter(r => {
+      // A record is considered valid if it has at least name or basic identifying info
+      return r && (r.name || r.id || r.whatsapp);
+    }).length : totalRecords;
+    const recordsWithSurvey = rawData ? rawData.filter(r => r.survey).length : 0;
+    const recordsWithContact = rawData ? rawData.filter(r => r.whatsappSentAt).length : 0;
+    const recordsWithClick = rawData ? rawData.filter(r => r.clickedAt).length : 0;
 
     let contextString = `CONTEXTO DE INTELIGÊNCIA DE DADOS MUNICIPAIS:
 
 VISÃO GERAL EXECUTIVA:
 ${executiveSummary}
 
-PERFIL ESTATÍSTICO:
+CONTAGENS DE REGISTROS (IMPORTANTE PARA PERGUNTAS ESTATÍSTICAS):
+• Total de Registros no Banco: ${totalRecords}
+• Registros Válidos (com nome, ID ou WhatsApp): ${validRecords}
+• Registros que Responderam à Pesquisa: ${recordsWithSurvey}
+• Registros que Receberam Mensagem WhatsApp: ${recordsWithContact}
+• Registros que Clicaram no Link: ${recordsWithClick}
+• Registros Pendentes (sem resposta): ${totalRecords - recordsWithSurvey}
+
+DADOS PRINCIPAIS:
 • População: ${statisticalProfile.population.total} cidadãos no total
-• Taxa de Resposta: ${statisticalProfile.population.responseRate}% (confiabilidade: ${statisticalProfile.satisfaction.reliability})
-• Desempenho de Engajamento: ${statisticalProfile.population.engagementRate}% (vs ${benchmarkComparison.engagement.benchmark}% benchmark)
-• Pontuação de Satisfação: ${statisticalProfile.satisfaction.averageScore}/5 (confiança: ±${statisticalProfile.satisfaction.confidenceInterval.marginOfError})
+• Taxa de Resposta: ${statisticalProfile.population.responseRate}% (qualidade dos dados: ${statisticalProfile.satisfaction.reliability})
+• Engajamento: ${statisticalProfile.population.engagementRate}% dos cidadãos (comparado com ${benchmarkComparison.engagement.benchmark}% que seria típico)
+• Satisfação Média: ${statisticalProfile.satisfaction.averageScore}/5 (margem de erro: ±${statisticalProfile.satisfaction.confidenceInterval.marginOfError})
 
-BENCHMARKING DE DESEMPENHO:
-• Satisfação: ${benchmarkComparison.satisfaction.current}/5 vs ${benchmarkComparison.satisfaction.benchmark}/5 benchmark (${benchmarkComparison.satisfaction.performance})
-• Taxa de Resposta: ${benchmarkComparison.responseRate.current}% vs ${benchmarkComparison.responseRate.benchmark}% benchmark (${benchmarkComparison.responseRate.performance})
-• Engajamento: ${benchmarkComparison.engagement.current}% vs ${benchmarkComparison.engagement.benchmark}% benchmark (${benchmarkComparison.engagement.performance})
+COMPARAÇÃO COM O ESPERADO:
+• Satisfação: ${benchmarkComparison.satisfaction.current}/5 vs ${benchmarkComparison.satisfaction.benchmark}/5 esperado (${benchmarkComparison.satisfaction.performance})
+• Taxa de Resposta: ${benchmarkComparison.responseRate.current}% vs ${benchmarkComparison.responseRate.benchmark}% esperado (${benchmarkComparison.responseRate.performance})
+• Engajamento: ${benchmarkComparison.engagement.current}% vs ${benchmarkComparison.engagement.benchmark}% esperado (${benchmarkComparison.engagement.performance})
 
-ANÁLISE DE EQUIDADE GEOGRÁFICA:
+SITUAÇÃO DOS BAIRROS:
 • Total de Bairros: ${statisticalProfile.geographic.totalNeighborhoods}
-• Lacuna de Desempenho: ${statisticalProfile.geographic.equityGap} pontos (nível de risco ${trendAnalysis.geographic.riskLevel})
-• Melhores Desempenhos: ${statisticalProfile.geographic.topPerformers.map(([name, data]) => `${name} (${data.performanceScore}%)`).join(', ')}
-• Necessitam Atenção: ${statisticalProfile.geographic.needsAttention.map(([name, data]) => `${name} (${data.performanceScore}%)`).join(', ')}
+• Diferença entre Bairros: ${statisticalProfile.geographic.equityGap} pontos (nível de preocupação: ${trendAnalysis.geographic.riskLevel})
+• Melhores Resultados: ${statisticalProfile.geographic.topPerformers.map(([name, data]) => `${name} (${data.performanceScore}%)`).join(', ')}
+• Precisam de Atenção: ${statisticalProfile.geographic.needsAttention.map(([name, data]) => `${name} (${data.performanceScore}%)`).join(', ')}
 
 INSIGHTS CRÍTICOS:
 ${keyInsights.filter(insight => insight.urgency === 'immediate' || insight.urgency === 'high').map(insight =>
@@ -238,25 +405,36 @@ ${statisticalProfile.issues.breakdown.slice(0, 3).map(issue =>
 - Sugira estratégias de divulgação específicas para cada categoria`,
 
       insights: `REQUISITOS DE ANÁLISE ESPECÍFICOS:
-- Identifique padrões não óbvios e correlações nos dados
-- Explique as implicações de governança municipal de cada padrão
-- Conecte insights a melhorias políticas ou operacionais acionáveis
-- Avalie a confiabilidade estatística e significância de cada insight
-- Forneça contexto comparativo com melhores práticas municipais`,
+- Identifique padrões nos dados que podem não ser óbvios
+- Explique o que cada padrão significa na prática para a gestão
+- Conecte os insights a ações concretas que podem ser tomadas
+- Indique se os dados são suficientes para confiar nas conclusões
+- Compare com o que é típico quando isso ajuda a entender a situação`,
 
       analysis: `REQUISITOS DE ANÁLISE ESPECÍFICOS:
 - Realize análise multidimensional conectando dados de satisfação, engajamento e geográficos
 - Inclua análise de tendências e elementos preditivos onde estatisticamente válido
 - Identifique tanto oportunidades de intervenção imediatas quanto áreas de melhoria estratégica
 - Avalie requisitos de recursos e viabilidade de implementação para recomendações
-- Forneça framework abrangente de medição de sucesso`,
+- Forneça framework abrangente de medição de sucesso
+
+INSTRUÇÕES ESPECIAIS PARA PERGUNTAS ESTATÍSTICAS/DIRETAS:
+- Se a pergunta pede números, contagens, totais ou estatísticas específicas, RESPONDA DIRETAMENTE COM O NÚMERO
+- Use os dados exatos fornecidos acima, não faça estimativas ou aproximações
+- Comece a resposta com o número solicitado de forma clara e direta
+- Depois, forneça contexto adicional se relevante
+- Exemplos de perguntas que precisam resposta direta:
+  * "Quantos registros válidos existem?" → Responda: "Existem X registros válidos no banco de dados."
+  * "Quantos cidadãos responderam?" → Responda: "Y cidadãos responderam à pesquisa."
+  * "Qual o total de cadastros?" → Responda: "O total de cadastros é Z."
+- Seja preciso e direto: primeiro o número, depois o contexto`,
 
       comparison: `REQUISITOS DE ANÁLISE ESPECÍFICOS:
-- Destaque diferenças estatisticamente significativas com intervalos de confiança
-- Explique o significado prático das diferenças identificadas para operações municipais
-- Identifique melhores práticas de segmentos de alto desempenho que podem ser replicadas
-- Avalie as causas raiz subjacentes às diferenças de desempenho
-- Forneça estratégias específicas para fechar lacunas de desempenho`,
+- Destaque diferenças importantes encontradas nos dados
+- Explique o que essas diferenças significam na prática
+- Identifique o que está funcionando bem e pode ser replicado
+- Avalie por que há essas diferenças de desempenho
+- Sugira ações práticas para melhorar e reduzir desigualdades`,
 
       action: `REQUISITOS DE ANÁLISE ESPECÍFICOS:
 - Identifique grupos-alvo específicos com informações de contato e justificativa

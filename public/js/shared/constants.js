@@ -58,9 +58,7 @@ export const ApiEndpoints = Object.freeze({
   HEALTH: '/api/health',
   CONFIG: '/api/config',
   AGENT_UI: '/api/admin/agent-ui',
-  MARK_SENT: (id) => `/api/contacts/${id}/mark-sent`,
-  RESET_DATA: '/api/admin/reset-data',
-  RESTORE_SEED: '/api/admin/restore-seed'
+  MARK_SENT: (id) => `/api/contacts/${id}/mark-sent`
 });
 
 export const DateFormat = Object.freeze({

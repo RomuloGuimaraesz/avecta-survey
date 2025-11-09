@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Chat Component Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .test-container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .test-result {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+    .test-result.pass {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    .test-result.fail {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    .test-result.pending {
+      background: #fff3cd;
+      color: #856404;
+      border: 1px solid #ffeeba;
+    }
+    #chatContainer {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+    }
+    h2 { margin-top: 30px; }
+    button {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 5px;
+    }
+    button:hover { background: #0056b3; }
+  </style>
+</head>
+<body>
+  <div class="test-container">
+    <h1>🧪 AI Chat Component - Fix Verification Tests</h1>
+    <p><strong>Testing Fix:</strong> Removed selective rendering logic</p>
+
+    <div id="testResults"></div>
+
+    <h2>Manual Test Actions</h2>
+    <button onclick="runAllTests()">🚀 Run All Automated Tests</button>
+    <button onclick="manualTest1()">Test 1: Toggle Chat Open</button>
+    <button onclick="manualTest2()">Test 2: Toggle Chat Close</button>
+    <button onclick="manualTest3()">Test 3: Check Welcome Message</button>
+  </div>
+
+  <div id="chatContainer">
+    <ai-chat id="testChat"></ai-chat>
+  </div>
+
+  <!-- Toast Manager -->
+  <script src="./toast.js"></script>
+  <script>
+    const toastManager = new ToastManager();
+  </script>
+
+  <!-- Main Application -->
+  <script type="module">
+    import { registerAllComponents } from './js/web-components/index.js';
+    import { ProcessAIQueryUseCase } from './js/application/usecases/ProcessAIQueryUseCase.js';
+    import { AIAssistantService } from './js/infrastructure/services/AIAssistantService.js';
+    import { ApiClient } from './js/infrastructure/api/ApiClient.js';
+
+    // Initialize
+    registerAllComponents();
+
+    // Set up dependencies
+    const apiClient = new ApiClient(window.APP_BASE_URL || '');
+    const aiService = new AIAssistantService(apiClient);
+    const processAIQuery = new ProcessAIQueryUseCase(aiService);
+
+    const chatWidget = document.getElementById('testChat');
+    if (chatWidget) {
+      chatWidget.setDependencies(processAIQuery, window.toastManager);
+    }
+
+    // Test utilities
+    let testResults = [];
+
+    function logTest(name, passed, message) {
+      const result = {
+        name,
+        passed,
+        message,
+        timestamp: new Date().toISOString()
+      };
+      testResults.push(result);
+      displayResults();
+    }
+
+    function displayResults() {
+      const container = document.getElementById('testResults');
+      container.innerHTML = '<h2>Test Results</h2>';
+
+      testResults.forEach((result, idx) => {
+        const div = document.createElement('div');
+        div.className = `test-result ${result.passed ? 'pass' : 'fail'}`;
+        div.innerHTML = `
+          <strong>${result.passed ? '✅' : '❌'} Test ${idx + 1}: ${result.name}</strong><br>
+          ${result.message}
+        `;
+        container.appendChild(div);
+      });
+
+      const summary = document.createElement('div');
+      const passed = testResults.filter(t => t.passed).length;
+      const total = testResults.length;
+      summary.className = `test-result ${passed === total ? 'pass' : (passed === 0 ? 'fail' : 'pending')}`;
+      summary.innerHTML = `<strong>Summary: ${passed}/${total} tests passed</strong>`;
+      container.insertBefore(summary, container.firstChild);
+    }
+
+    async function runAllTests() {
+      testResults = [];
+      displayResults();
+
+      // TEST 1: Component exists and is registered
+      await new Promise(resolve => setTimeout(resolve, 100));
+      const chat = document.getElementById('testChat');
+      const test1 = chat && chat.shadowRoot !== null;
+      logTest(
+        'Component renders initially',
+        test1,
+        test1 ? 'Shadow DOM exists' : 'Shadow DOM not found'
+      );
+
+      if (!test1) return; // Stop if component doesn't render
+
+      // TEST 2: Shadow DOM has expected structure
+      const chatToggle = chat.shadowRoot.querySelector('.chat-toggle');
+      const chatContainer = chat.shadowRoot.querySelector('.chat-container');
+      const test2 = chatToggle && chatContainer;
+      logTest(
+        'Component structure is correct',
+        test2,
+        test2 ? 'Toggle button and container found' : 'Missing expected elements'
+      );
+
+      // TEST 3: Chat can open
+      const wasOpen = chat.isOpen;
+      chat.openChat();
+      await new Promise(resolve => setTimeout(resolve, 200));
+      const test3 = chat.isOpen === true;
+      logTest(
+        'Chat opens correctly',
+        test3,
+        test3 ? 'isOpen property is true' : 'isOpen property is not true'
+      );
+
+      // TEST 4: Chat container has 'open' class when open
+      const hasOpenClass = chatContainer.classList.contains('open');
+      logTest(
+        'Open state reflects in DOM',
+        hasOpenClass,
+        hasOpenClass ? 'Container has "open" class' : 'Container missing "open" class'
+      );
+
+      // TEST 5: Messages container exists
+      const messagesContainer = chat.shadowRoot.querySelector('.chat-messages');
+      const test5 = messagesContainer !== null;
+      logTest(
+        'Messages container exists',
+        test5,
+        test5 ? 'Messages container found in shadow DOM' : 'Messages container not found'
+      );
+
+      // TEST 6: Welcome message was added (check internal state)
+      await new Promise(resolve => setTimeout(resolve, 500));
+      const test6 = chat.messages && chat.messages.length > 0;
+      logTest(
+        'Welcome message added',
+        test6,
+        test6 ? `${chat.messages.length} message(s) in internal array` : 'No messages found'
+      );
+
+      // TEST 7: Welcome message rendered to DOM
+      const messageElements = messagesContainer.querySelectorAll('.message');
+      const test7 = messageElements.length > 0;
+      logTest(
+        'Welcome message rendered to DOM',
+        test7,
+        test7 ? `${messageElements.length} message element(s) in DOM` : 'No message elements in DOM'
+      );
+
+      // TEST 8: Quick suggestion buttons exist
+      const quickSuggestions = messagesContainer.querySelectorAll('.quick-suggestion');
+      const test8 = quickSuggestions.length > 0;
+      logTest(
+        'Quick suggestion buttons exist',
+        test8,
+        test8 ? `${quickSuggestions.length} suggestion button(s) found` : 'No suggestion buttons found'
+      );
+
+      // TEST 9: Chat can close
+      chat.closeChat();
+      await new Promise(resolve => setTimeout(resolve, 200));
+      const test9 = chat.isOpen === false;
+      logTest(
+        'Chat closes correctly',
+        test9,
+        test9 ? 'isOpen property is false' : 'isOpen property is not false'
+      );
+
+      // TEST 10: After closing and reopening, messages persist
+      chat.openChat();
+      await new Promise(resolve => setTimeout(resolve, 200));
+      const messagesAfterReopen = messagesContainer.querySelectorAll('.message');
+      const test10 = messagesAfterReopen.length > 0;
+      logTest(
+        'Messages persist after close/open',
+        test10,
+        test10 ? `${messagesAfterReopen.length} message(s) still in DOM` : 'Messages were lost'
+      );
+    }
+
+    // Manual test functions
+    window.manualTest1 = function() {
+      const chat = document.getElementById('testChat');
+      chat.openChat();
+      alert('Chat should now be OPEN. Check if:\n- Slide animation plays\n- Welcome message visible\n- Quick buttons visible');
+    };
+
+    window.manualTest2 = function() {
+      const chat = document.getElementById('testChat');
+      chat.closeChat();
+      alert('Chat should now be CLOSED. Check if:\n- Slide animation plays\n- Chat is hidden');
+    };
+
+    window.manualTest3 = function() {
+      const chat = document.getElementById('testChat');
+      const messages = chat.shadowRoot.querySelector('.chat-messages');
+      const quickButtons = messages.querySelectorAll('.quick-suggestion');
+      alert(`Welcome Message Check:\n- Messages in DOM: ${messages.children.length}\n- Quick buttons: ${quickButtons.length}\n\nExpected: At least 1 message with 7+ buttons`);
+    };
+
+    window.runAllTests = runAllTests;
+
+    // Auto-run tests after load
+    window.addEventListener('load', () => {
+      setTimeout(runAllTests, 1000);
+    });
+  </script>
+</body>
+</html>

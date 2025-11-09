@@ -27,7 +27,9 @@ export class CitizenDTO {
         satisfaction: citizen.surveyResponse.satisfactionLevel,
         participate: citizen.surveyResponse.participationIntent,
         answeredAt: citizen.surveyResponse.answeredAt,
-        otherIssueDetails: citizen.surveyResponse.otherIssueDetails
+        otherIssueDetails: citizen.surveyResponse.otherIssueDetails,
+        cep: citizen.surveyResponse.cep,
+        complemento: citizen.surveyResponse.complemento
       };
     } else {
       this.survey = null;

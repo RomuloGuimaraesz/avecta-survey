@@ -124,7 +124,9 @@ export class Citizen {
         data.survey.satisfaction,
         data.survey.participate,
         data.survey.answeredAt,
-        data.survey.otherIssue
+        data.survey.otherIssue,
+        data.survey.cep,
+        data.survey.complemento
       );
     }
 
@@ -162,7 +164,9 @@ export class Citizen {
         satisfaction: this._surveyResponse.satisfactionLevel,
         participate: this._surveyResponse.participationIntent,
         answeredAt: this._surveyResponse.answeredAt,
-        otherIssue: this._surveyResponse.otherIssueDetails
+        otherIssue: this._surveyResponse.otherIssueDetails,
+        cep: this._surveyResponse.cep,
+        complemento: this._surveyResponse.complemento
       } : null,
       createdAt: this._metadata.createdAt,
       updatedAt: this._metadata.updatedAt

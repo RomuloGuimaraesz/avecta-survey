@@ -29,7 +29,7 @@
       <input name="name" placeholder="Nome completo" required>
       <input name="age" type="number" placeholder="Idade" required min="1" max="120">
       <input name="neighborhood" placeholder="Bairro" required>
-      <input name="whatsapp" placeholder="WhatsApp" required pattern="[0-9]+">
+      <input name="whatsapp" placeholder="WhatsApp (11)998877665" required pattern="^\(\d{2}\)\d{8,9}$" inputmode="numeric" maxlength="13">
       <button type="submit">Salvar</button>
     </form>
   </div>
@@ -42,6 +42,40 @@
   // Main form logic
   const form = document.getElementById("contactForm");
   const container = document.querySelector(".container");
+  const whatsappInput = form.whatsapp;
+  
+  const formatWhatsappValue = (value) => {
+    const digits = value.replace(/\D/g, "").slice(0, 11);
+    const ddd = digits.slice(0, 2);
+    const phone = digits.slice(2);
+    
+    if (!digits.length) {
+      return { formatted: "", digits: "" };
+    }
+    
+    if (digits.length < 3) {
+      return { formatted: `(${ddd}`, digits };
+    }
+    
+    const formatted = phone ? `(${ddd})${phone}` : `(${ddd})`;
+    return { formatted, digits };
+  };
+  
+  const updateWhatsappInput = (value) => {
+    const { formatted, digits } = formatWhatsappValue(value);
+    whatsappInput.value = formatted;
+    whatsappInput.dataset.raw = digits;
+  };
+  
+  whatsappInput.addEventListener("input", (event) => {
+    updateWhatsappInput(event.target.value);
+  });
+  
+  whatsappInput.addEventListener("blur", () => {
+    updateWhatsappInput(whatsappInput.value);
+  });
+  
+  updateWhatsappInput(whatsappInput.value);
   let lastCreated = null;
 
   form.addEventListener("submit", async (e) => {
@@ -57,11 +91,13 @@
       title: "Processando"
     });
 
+    const rawWhatsapp = form.whatsapp.dataset.raw || form.whatsapp.value.replace(/\D/g, "");
+    
     const payload = {
       name: form.name.value.trim(),
       age: form.age.value,
       neighborhood: form.neighborhood.value.trim(),
-      whatsapp: form.whatsapp.value.trim()
+      whatsapp: rawWhatsapp
     };
 
     try {
@@ -86,6 +122,7 @@
   // Admin enviará o link via WhatsApp na página administrativa.
 
       form.reset();
+      updateWhatsappInput("");
       
     } catch (err) {
       console.error(err);
@@ -114,7 +151,7 @@
         title: "Campo Obrigatório"
       });
     } else if (field.validity.patternMismatch && field.name === 'whatsapp') {
-      toastManager.warning("WhatsApp deve conter apenas números (ex: 5511999999999)", {
+      toastManager.warning("WhatsApp deve estar no formato (11)999999999", {
         title: "Formato Inválido"
       });
     } else if (field.validity.rangeUnderflow) {

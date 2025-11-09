@@ -1,4 +1,0 @@
-[
-  { "id": 1001, "name": "Contato Demo 1", "age": 30, "neighborhood": "Centro", "whatsapp": "5511999999999", "createdAt": "2025-01-01T12:00:00.000Z", "whatsappSentAt": null, "whatsappMessageId": null, "whatsappProvider": null, "whatsappStatus": null, "whatsappStatusUpdatedAt": null, "clickedAt": null, "survey": null },
-  { "id": 1002, "name": "Contato Demo 2", "age": 42, "neighborhood": "Vila Nogueira", "whatsapp": "5511888888888", "createdAt": "2025-01-02T12:00:00.000Z", "whatsappSentAt": null, "whatsappMessageId": null, "whatsappProvider": null, "whatsappStatus": null, "whatsappStatusUpdatedAt": null, "clickedAt": null, "survey": null }
-]

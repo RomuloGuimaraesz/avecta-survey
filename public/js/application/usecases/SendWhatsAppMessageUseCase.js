@@ -61,6 +61,8 @@ export class SendWhatsAppMessageUseCase {
       ? window.APP_BASE_URL
       : (typeof window !== 'undefined' ? window.location.origin : '');
 
-    return `Olá, ${name}! Agradecemos a sua participação no Bingo do Bem.\nEstamos realizando uma pesquisa rápida sobre as necessidades do bairro ${neighborhood}.\nPedimos para que responda a pesquisa, leva só 1 minuto!\nAtenciosamente, Luana e Marion.`;
+    return `Olá, ${name}! Agradecemos a sua participação em nosso evento!\n
+    Essa é uma pesquisa rápida para sabermos mais sobre o seu bairro (${neighborhood}), leva apenas 1 minuto!.\n
+    Atenciosamente, Luana e Marion.`;
   }
 }

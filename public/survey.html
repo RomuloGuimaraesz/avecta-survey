@@ -23,6 +23,16 @@
 
     <div id="formWrap">
       <form id="surveyForm">
+        <!--New Field: CEP -->
+        <div>
+          <label for="cepInput">Qual o seu CEP?</label>
+          <input id="cepInput" name="cep" type="text" inputmode="numeric" placeholder="CEP" required pattern="[0-9\-]+" maxlength="9" autocomplete="postal-code">
+          <small id="cepFeedback" class="form-feedback" aria-live="polite"></small>
+        </div>
+        <div>
+          <label for="complementoInput">Complemento</label>
+          <input id="complementoInput" name="complemento" type="text" placeholder="Complemento (auto preenchido)" readonly>
+        </div>
         <div>
           <label>Qual o maior problema no seu bairro?</label>
           <select name="issue" required>
@@ -53,7 +63,7 @@
         </div>
 
         <div>
-          <label>Gostaria de participar de futuros eventos?</label>
+          <label>Gostaria de participar de mais eventos promovidos pela Luana Lia e Marion?</label>
           <select name="participate" required>
             <option value="">Selecione uma opção...</option>
             <option value="Sim">Sim</option>
@@ -97,6 +107,116 @@
 
     const form = document.getElementById("surveyForm");
     const container = document.querySelector(".container");
+    const cepInput = form.cep;
+    const complementoInput = form.complemento;
+    const cepFeedbackEl = document.getElementById("cepFeedback");
+
+    const normalizeCepDigits = (value = "") => value.replace(/\D/g, "").slice(0, 8);
+    const formatCepDisplay = (digits) => digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits;
+    const setCepFeedback = (message = "", state = "info") => {
+      if (!cepFeedbackEl) return;
+      cepFeedbackEl.textContent = message;
+      cepFeedbackEl.className = "form-feedback";
+      if (message) {
+        cepFeedbackEl.classList.add(`form-feedback--${state}`);
+      }
+    };
+
+    let lastCepLookup = { value: null, status: "idle", data: null };
+
+    function applyCepResponse(payload, digits) {
+      const resolvedDigits = normalizeCepDigits((payload && payload.cep) || digits || "");
+      const formattedCep = formatCepDisplay(resolvedDigits);
+      if (formattedCep && cepInput) {
+        cepInput.value = formattedCep;
+      }
+      const complementoValue = payload && typeof payload.complemento === "string"
+        ? payload.complemento.trim()
+        : "";
+      if (complementoInput) {
+        complementoInput.value = complementoValue;
+      }
+      return { cep: formattedCep, complemento: complementoValue };
+    }
+
+    async function lookupCep(sanitizedDigits, { force = false } = {}) {
+      const digits = normalizeCepDigits(sanitizedDigits);
+      if (!digits) {
+        setCepFeedback("", "info");
+        if (complementoInput) complementoInput.value = "";
+        lastCepLookup = { value: null, status: "idle", data: null };
+        return lastCepLookup;
+      }
+
+      if (digits.length !== 8) {
+        setCepFeedback("Informe um CEP com 8 números.", "error");
+        if (complementoInput) complementoInput.value = "";
+        lastCepLookup = { value: digits, status: "invalid", data: null };
+        return lastCepLookup;
+      }
+
+      if (!force && lastCepLookup.value === digits && lastCepLookup.status === "success") {
+        applyCepResponse(lastCepLookup.data, digits);
+        return lastCepLookup;
+      }
+
+      try {
+        setCepFeedback("Buscando informações do CEP...", "loading");
+        const response = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
+        if (!response.ok) {
+          throw new Error("ViaCEP request failed");
+        }
+        const payload = await response.json();
+        if (payload.erro) {
+          setCepFeedback("CEP não encontrado. Confira o número digitado.", "error");
+          if (complementoInput) complementoInput.value = "";
+          lastCepLookup = { value: digits, status: "not_found", data: null };
+          return lastCepLookup;
+        }
+
+        const data = applyCepResponse(payload, digits);
+        lastCepLookup = { value: digits, status: "success", data };
+
+        if (data.complemento) {
+          setCepFeedback("Complemento preenchido automaticamente.", "success");
+        } else {
+          setCepFeedback("Complemento indisponível para este CEP.", "info");
+        }
+        return lastCepLookup;
+      } catch (error) {
+        console.error("ViaCEP lookup failed:", error);
+        setCepFeedback("Não foi possível buscar o CEP agora. Tente novamente mais tarde.", "error");
+        if (complementoInput) complementoInput.value = "";
+        lastCepLookup = { value: digits, status: "error", data: null };
+        return lastCepLookup;
+      }
+    }
+
+    if (cepInput) {
+      cepInput.addEventListener("input", () => {
+        const digits = normalizeCepDigits(cepInput.value);
+        const formatted = formatCepDisplay(digits);
+        cepInput.value = formatted;
+
+        if (digits.length < 8) {
+          if (complementoInput) complementoInput.value = "";
+          if (digits.length === 0) {
+            setCepFeedback("", "info");
+          } else {
+            setCepFeedback("Digite os 8 números do CEP para buscar informações.", "info");
+          }
+          lastCepLookup = { value: digits, status: "pending", data: null };
+          return;
+        }
+
+        lookupCep(digits);
+      });
+
+      cepInput.addEventListener("blur", () => {
+        const digits = normalizeCepDigits(cepInput.value);
+        lookupCep(digits, { force: true });
+      });
+    }
 
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -104,6 +224,29 @@
       // Clear previous result
       document.getElementById("result").textContent = "";
       document.getElementById("result").className = "";
+
+      const sanitizedCep = normalizeCepDigits(cepInput ? cepInput.value : "");
+      const cepResult = await lookupCep(sanitizedCep, { force: true });
+      if (!cepResult || cepResult.status !== "success") {
+        setCepFeedback("Confirme um CEP válido antes de enviar.", "error");
+        if (cepInput) cepInput.focus();
+        return;
+      }
+
+      const complementoValue = cepResult.data && typeof cepResult.data.complemento === "string"
+        ? cepResult.data.complemento
+        : (complementoInput ? complementoInput.value : "");
+
+      const payload = {
+        id: Number(id),
+        issue: form.issue.value,
+        otherIssue: form.otherIssue ? form.otherIssue.value : "",
+        satisfaction: form.satisfaction.value,
+        participate: form.participate.value,
+        cep: cepResult.data ? cepResult.data.cep : formatCepDisplay(sanitizedCep),
+        complemento: complementoValue ?? ""
+      };
+
       container.classList.add("loading");
 
       // Show loading toast
@@ -113,19 +256,11 @@
         title: "Processando"
       });
 
-      const data = {
-        id: Number(id),
-        issue: form.issue.value,
-        otherIssue: form.otherIssue.value,
-        satisfaction: form.satisfaction.value,
-        participate: form.participate.value
-      };
-
       try {
         const res = await fetch("/api/survey", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(data)
+          body: JSON.stringify(payload)
         });
         const body = await res.json();
         if (!res.ok) throw body;

@@ -80,11 +80,59 @@ export class HttpCitizenRepository extends ICitizenRepository {
 
   async exportToCSV() {
     try {
-      // Trigger CSV download via endpoint
-      window.location.href = ApiEndpoints.EXPORT;
+      const response = await this.api.get(ApiEndpoints.EXPORT, {
+        headers: {
+          Accept: 'text/csv'
+        }
+      });
+
+      if (!response || typeof response.blob !== 'function') {
+        throw new Error('Resposta inesperada do servidor');
+      }
+
+      const blob = await response.blob();
+      const disposition = response.headers?.get?.('content-disposition') || '';
+      const filename = this.extractFilename(disposition) || 'citizens_export.csv';
+
+      if (window.navigator && typeof window.navigator.msSaveOrOpenBlob === 'function') {
+        window.navigator.msSaveOrOpenBlob(blob, filename);
+        return;
+      }
+
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error('[HttpCitizenRepository] exportToCSV error:', error);
       throw new Error('Falha ao exportar dados');
+    }
+  }
+
+  extractFilename(contentDisposition) {
+    if (!contentDisposition) return null;
+
+    const filenameMatch = /filename\*?=(?:UTF-8'')?(\"?)([^\";]+)\1/i.exec(contentDisposition);
+    if (!filenameMatch) return null;
+
+    try {
+      return decodeURIComponent(filenameMatch[2]);
+    } catch {
+      return filenameMatch[2];
+    }
+  }
+
+  async delete(id) {
+    try {
+      await this.api.delete(`${ApiEndpoints.CONTACTS}/${id}`);
+      return true;
+    } catch (error) {
+      console.error('[HttpCitizenRepository] delete error:', error);
+      throw new Error('Falha ao deletar cidadão');
     }
   }
 }

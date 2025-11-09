@@ -92,10 +92,8 @@ app.use(express.static(path.join(__dirname, "public")));
 
 // Public runtime config (expose BASE_URL to clients)
 app.get('/api/config', (req, res) => {
-  const demoResetEnabled = String(process.env.DEMO_RESET_ENABLED ?? 'true').toLowerCase() === 'true';
   res.json({ 
-    baseUrl: getBaseUrl(req),
-    demoResetEnabled
+    baseUrl: getBaseUrl(req)
   });
 });
 
@@ -129,6 +127,72 @@ function writeDB(data) {
     console.error("Error writing DB:", err);
     throw err;
   }
+}
+
+function flattenRecord(record) {
+  const result = {};
+
+  if (!record || typeof record !== 'object') {
+    return result;
+  }
+
+  Object.entries(record).forEach(([key, value]) => {
+    flattenValue(key, value, result);
+  });
+
+  return result;
+}
+
+function flattenValue(prefix, value, accumulator) {
+  if (value === null || value === undefined) {
+    accumulator[prefix] = '';
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    if (value.every(item => item === null || item === undefined)) {
+      accumulator[prefix] = '';
+      return;
+    }
+
+    if (value.every(item => typeof item !== 'object')) {
+      accumulator[prefix] = value.map(item => item ?? '').join(';');
+      return;
+    }
+
+    value.forEach((item, index) => {
+      flattenValue(`${prefix}_${index}`, item, accumulator);
+    });
+    return;
+  }
+
+  if (typeof value === 'object') {
+    Object.entries(value).forEach(([childKey, childValue]) => {
+      flattenValue(`${prefix}_${childKey}`, childValue, accumulator);
+    });
+    return;
+  }
+
+  accumulator[prefix] = value;
+}
+
+function formatCsvValue(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+
+  let stringValue;
+
+  if (value instanceof Date) {
+    stringValue = value.toISOString();
+  } else if (typeof value === 'object') {
+    stringValue = JSON.stringify(value);
+  } else {
+    stringValue = String(value);
+  }
+
+  const escaped = stringValue.replace(/"/g, '""');
+  return /[",\n\r]/.test(escaped) ? `"${escaped}"` : escaped;
 }
 
 function makeLinks(id) {
@@ -220,51 +284,6 @@ app.post('/logout', (req, res) => {
   });
 });
 
-// Admin-only endpoint to wipe demo data (requires DEMO_RESET_ENABLED=true)
-app.post('/api/admin/reset-data', (req, res) => {
-  if (!req.session?.authenticated) {
-    return res.status(401).json({ error: 'Authentication required' });
-  }
-  const resetEnabled = String(process.env.DEMO_RESET_ENABLED ?? 'true').toLowerCase() === 'true';
-  if (!resetEnabled) {
-    return res.status(403).json({ error: 'Reset disabled. Set DEMO_RESET_ENABLED=true to allow.' });
-  }
-  try {
-    // Backup then wipe
-    if (fs.existsSync(DB_FILE)) {
-      const backupFile = DB_FILE.replace('.json', `.backup.${Date.now()}.json`);
-      fs.copyFileSync(DB_FILE, backupFile);
-    }
-    fs.writeFileSync(DB_FILE, '[]');
-    res.json({ success: true, message: 'Data reset complete.' });
-  } catch (e) {
-    console.error('Reset error:', e);
-    res.status(500).json({ error: 'Failed to reset data' });
-  }
-});
-
-// Admin-only endpoint to restore demo data from bundled seed file
-app.post('/api/admin/restore-seed', (req, res) => {
-  if (!req.session?.authenticated) {
-    return res.status(401).json({ error: 'Authentication required' });
-  }
-  try {
-    const seedPath = path.join(__dirname, 'seed-data.json');
-    if (!fs.existsSync(seedPath)) {
-      return res.status(404).json({ error: 'Seed file not found' });
-    }
-    const raw = fs.readFileSync(seedPath, 'utf8');
-    const data = JSON.parse(raw);
-    if (!Array.isArray(data)) {
-      return res.status(400).json({ error: 'Seed data invalid: expected an array' });
-    }
-    writeDB(data);
-    res.json({ success: true, message: `Restored ${data.length} contacts from seed.` });
-  } catch (e) {
-    console.error('Restore seed error:', e);
-    res.status(500).json({ error: 'Failed to restore seed data' });
-  }
-});
 
 // --- Enhanced AI Endpoints ---
 
@@ -360,7 +379,7 @@ app.post("/api/admin/agent-ui", validateAgentQuery, async (req, res) => {
     let errorMessage = "I'm experiencing technical difficulties processing your request.";
     let errorCategory = 'unknown';
     
-    if (err.message.includes('GROQ_API_KEY') || err.message.includes('API key')) {
+    if (err.message.includes('CLAUDE_API_KEY') || err.message.includes('GROQ_API_KEY') || err.message.includes('API key')) {
       errorMessage = "AI service configuration issue detected. Please verify API credentials.";
       errorCategory = 'configuration';
     } else if (err.message.includes('data.json') || err.message.includes('DataAccessLayer')) {
@@ -605,6 +624,88 @@ app.get("/api/contacts/:id", (req, res) => {
   res.json({ ...user, _links: makeLinks(id) });
 });
 
+// Update contact
+app.put("/api/contacts/:id", (req, res) => {
+  const id = Number(req.params.id);
+  const data = readDB();
+  const user = data.find(u => u.id === id);
+  
+  if (!user) {
+    return res.status(404).json({ error: "User not found" });
+  }
+
+  const { name, age, neighborhood, whatsapp } = req.body || {};
+
+  // Validate required fields
+  if (name !== undefined && (!name || name.trim().length === 0)) {
+    return res.status(400).json({ error: "Name cannot be empty" });
+  }
+
+  if (age !== undefined && (isNaN(age) || age < 0)) {
+    return res.status(400).json({ error: "Age must be a valid positive number" });
+  }
+
+  // Update fields if provided
+  if (name !== undefined) {
+    user.name = String(name).trim();
+  }
+
+  if (age !== undefined) {
+    user.age = Number(age);
+  }
+
+  if (neighborhood !== undefined) {
+    user.neighborhood = String(neighborhood).trim();
+  }
+
+  if (whatsapp !== undefined) {
+    // Validate and format phone
+    const formattedPhone = whatsappService.formatPhoneNumber(whatsapp);
+    
+    if (!whatsappService.validateBrazilianPhone(formattedPhone)) {
+      return res.status(400).json({ 
+        error: "Invalid WhatsApp number. Use Brazilian format (11999999999)" 
+      });
+    }
+
+    // Check for duplicates by phone (excluding current user)
+    const existing = data.find(d => d.whatsapp === formattedPhone && d.id !== id);
+    if (existing) {
+      return res.status(409).json({ 
+        error: "Number already registered", 
+        existingContact: existing.name,
+        existingId: existing.id 
+      });
+    }
+
+    user.whatsapp = formattedPhone;
+  }
+
+  // Update timestamp
+  user.updatedAt = new Date().toISOString();
+
+  writeDB(data);
+
+  return res.json({ ...user, _links: makeLinks(id) });
+});
+
+// Delete contact
+app.delete("/api/contacts/:id", (req, res) => {
+  const id = Number(req.params.id);
+  const data = readDB();
+  const userIndex = data.findIndex(u => u.id === id);
+  
+  if (userIndex === -1) {
+    return res.status(404).json({ error: "User not found" });
+  }
+
+  // Remove user from array
+  data.splice(userIndex, 1);
+  writeDB(data);
+
+  return res.status(200).json({ success: true, message: "Contact deleted successfully" });
+});
+
 // Send WhatsApp - Enhanced with better error handling
 app.post("/api/contacts/:id/whatsapp", async (req, res) => {
   const id = Number(req.params.id);
@@ -725,12 +826,24 @@ app.post("/api/contacts/:id/click", (req, res) => {
 
 // Receive survey
 app.post("/api/survey", (req, res) => {
-  const { id, issue, satisfaction, participate, otherIssue } = req.body || {};
+  const { id, issue, satisfaction, participate, otherIssue, cep, complemento } = req.body || {};
   if (!id) return res.status(400).json({ error: "id required" });
 
   const data = readDB();
   const user = data.find(u => u.id === Number(id));
   if (!user) return res.status(404).json({ error: "User not found" });
+
+  if (!cep) {
+    return res.status(400).json({ error: "cep required" });
+  }
+
+  const sanitizedCep = String(cep).replace(/\D/g, "");
+  if (sanitizedCep.length !== 8) {
+    return res.status(400).json({ error: "Invalid CEP format" });
+  }
+
+  const formattedCep = `${sanitizedCep.slice(0, 5)}-${sanitizedCep.slice(5)}`;
+  const complementoValue = typeof complemento === "string" ? complemento.trim() : "";
 
   // Avoid duplicate responses
   if (user.survey) {
@@ -740,9 +853,15 @@ app.post("/api/survey", (req, res) => {
     });
   }
 
+  const trimmedOtherIssue = typeof otherIssue === "string" ? otherIssue.trim() : "";
+  const resolvedIssue = issue === "Outros" ? (trimmedOtherIssue || "Outros") : issue;
+  const resolvedOtherIssue = issue === "Outros" ? (trimmedOtherIssue || null) : null;
+
   user.survey = {
-    issue: issue === "Outros" ? (otherIssue || "Outros") : issue,
-    otherIssue: issue === "Outros" ? otherIssue : null,
+    cep: formattedCep,
+    complemento: complementoValue ? complementoValue : null,
+    issue: resolvedIssue,
+    otherIssue: resolvedOtherIssue,
     satisfaction,
     participate,
     answeredAt: new Date().toISOString()
@@ -866,57 +985,69 @@ app.post('/webhooks/twilio', express.urlencoded({ extended: true }), (req, res) 
 // Enhanced CSV export with architecture metadata
 app.get("/api/export", (req, res) => {
   const data = readDB();
-  const rows = [
-    [
-      "id",
-      "name", 
-      "age",
-      "neighborhood",
-      "whatsapp",
-      "createdAt",
-      "whatsappSentAt",
-      "whatsappProvider",
-      "whatsappStatus",
-      "whatsappMessageId",
-      "clickedAt",
-      "surveyIssue",
-      "surveyOtherIssue",
-      "surveySatisfaction", 
-      "surveyParticipate",
-      "surveyAnsweredAt"
-    ].join(",")
+  const flattenedRows = data.map(flattenRecord);
+
+  const defaultColumns = [
+    "id",
+    "name",
+    "age",
+    "neighborhood",
+    "whatsapp",
+    "createdAt",
+    "updatedAt",
+    "whatsappSentAt",
+    "whatsappProvider",
+    "whatsappStatus",
+    "whatsappMessageId",
+    "whatsappStatusUpdatedAt",
+    "clickedAt",
+    "survey_issue",
+    "survey_otherIssue",
+    "survey_satisfaction",
+    "survey_participate",
+    "survey_answeredAt"
   ];
 
-  data.forEach(u => {
-    const survey = u.survey || {};
-    const line = [
-      u.id,
-      `"${(u.name || "").replace(/"/g, '""')}"`,
-      u.age || "",
-      `"${(u.neighborhood || "").replace(/"/g, '""')}"`,
-      u.whatsapp || "",
-      u.createdAt || "",
-      u.whatsappSentAt || "",
-      u.whatsappProvider || "",
-      u.whatsappStatus || "",
-      u.whatsappMessageId || "",
-      u.clickedAt || "",
-      `"${(survey.issue || "").replace(/"/g, '""')}"`,
-      `"${(survey.otherIssue || "").replace(/"/g, '""')}"`,
-      `"${(survey.satisfaction || "").replace(/"/g, '""')}"`,
-      `"${(survey.participate || "").replace(/"/g, '""')}"`,
-      survey.answeredAt || ""
-    ].join(",");
-    rows.push(line);
+  const discoveredColumns = new Map();
+  flattenedRows.forEach(row => {
+    Object.entries(row).forEach(([column, value]) => {
+      const hasValue = value !== '' && value !== null && value !== undefined;
+
+      if (!discoveredColumns.has(column)) {
+        discoveredColumns.set(column, hasValue);
+        return;
+      }
+
+      if (!discoveredColumns.get(column) && hasValue) {
+        discoveredColumns.set(column, true);
+      }
+    });
   });
 
-  const csv = rows.join("\n");
-  const filename = `municipal_contacts_${new Date().toISOString().split('T')[0]}_refactored.csv`;
-  
+  const columns = [...defaultColumns];
+  discoveredColumns.forEach((hasValue, column) => {
+    if (hasValue && !columns.includes(column)) {
+      columns.push(column);
+    }
+  });
+
+  if (columns.length === 0) {
+    columns.push(...defaultColumns);
+  }
+
+  const headerRow = columns.map(column => formatCsvValue(column)).join(",");
+  const dataRows = flattenedRows.map(row => {
+    return columns.map(column => formatCsvValue(row[column])).join(",");
+  });
+
+  const csvLines = [headerRow, ...dataRows];
+  const csvContent = csvLines.join("\n");
+  const filename = `municipal_contacts_${new Date().toISOString().split("T")[0]}_refactored.csv`;
+
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.setHeader("X-Architecture-Version", "refactored_v2");
-  return res.send(csv);
+  return res.send(`\ufeff${csvContent}`);
 });
 
 // Enhanced statistics endpoint with architecture insights

@@ -129,30 +129,29 @@ export class AdminViewModel {
     }
   }
 
-  copySurveyLink(citizenId) {
+  async copySurveyLink(citizenId) {
     const citizen = this.currentCitizens.find(c => c.id === citizenId);
 
     if (!citizen) {
-      this.toastManager?.error('Cidadão não encontrado.', { title: 'Erro' });
-      return;
+      return {
+        success: false,
+        errorMessage: 'Cidadão não encontrado.'
+      };
     }
 
     const base = window.APP_BASE_URL || window.location.origin;
     const surveyLink = `${base}/survey.html?id=${citizen.id}`;
 
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(surveyLink)
-        .then(() => {
-          this.toastManager?.success('Link copiado. Agora cole no WhatsApp.', {
-            title: 'Copiado'
-          });
-        })
-        .catch(() => {
-          this.fallbackCopy(surveyLink);
-        });
-    } else {
-      this.fallbackCopy(surveyLink);
+      try {
+        await navigator.clipboard.writeText(surveyLink);
+        return { success: true };
+      } catch {
+        return this.fallbackCopy(surveyLink);
+      }
     }
+
+    return this.fallbackCopy(surveyLink);
   }
 
   fallbackCopy(text) {
@@ -161,18 +160,24 @@ export class AdminViewModel {
     document.body.appendChild(ta);
     ta.select();
 
+    let success = false;
+
     try {
-      document.execCommand('copy');
-      this.toastManager?.success('Link copiado. Agora cole no WhatsApp.', {
-        title: 'Copiado'
-      });
+      success = document.execCommand('copy');
     } catch {
-      this.toastManager?.error('Não foi possível copiar automaticamente. Copie manualmente: ' + text, {
-        title: 'Erro'
-      });
+      success = false;
+    } finally {
+      document.body.removeChild(ta);
     }
 
-    document.body.removeChild(ta);
+    if (success) {
+      return { success: true };
+    }
+
+    return {
+      success: false,
+      errorMessage: 'Não foi possível copiar automaticamente. Copie manualmente: ' + text
+    };
   }
 
   async exportData() {

@@ -4,13 +4,13 @@ const orchestrator = require('../orchestrator');
 
 /*
  * provenance-llm.test.js
- * Verifies that when GROQ_API_KEY is present and LLM enhancement succeeds,
- * the orchestrator exposes provenance.source = 'knowledge_agent+groq_llm' and llm.used true.
+ * Verifies that when CLAUDE_API_KEY is present and LLM enhancement succeeds,
+ * the orchestrator exposes provenance.source = 'knowledge_agent+claude_llm' and llm.used true.
  * If no key, test will skip gracefully but still assert baseline provenance shape.
  */
 
 (async () => {
-  const hasKey = !!process.env.GROQ_API_KEY;
+  const hasKey = !!process.env.CLAUDE_API_KEY;
   const query = 'Gerar um relatorio municipal abrangente com bairros e satisfacao';
   const res = await orchestrator(query);
 
@@ -22,16 +22,16 @@ const orchestrator = require('../orchestrator');
     if (hasKey) {
       // When key is present we expect attempt; may still be data-driven if quality gate failed
       if (res.llmEnhanced) {
-        assert.strictEqual(res.provenance.source, 'knowledge_agent+groq_llm', 'Expected groq_llm provenance source');
+        assert.strictEqual(res.provenance.source, 'knowledge_agent+claude_llm', 'Expected claude_llm provenance source');
         assert.strictEqual(res.provenance.llm.used, true, 'LLM marked used');
-        assert.strictEqual(res.provenance.llm.provider, 'groq', 'Provider should be groq');
+        assert.strictEqual(res.provenance.llm.provider, 'claude', 'Provider should be claude');
       } else {
         console.warn('[provenance-llm.test] LLM key present but enhancement not adopted (quality gate)');
-        assert.ok(['knowledge_agent','knowledge_agent+groq_llm'].includes(res.provenance.source), 'Source unexpected when LLM not adopted');
+        assert.ok(['knowledge_agent','knowledge_agent+claude_llm'].includes(res.provenance.source), 'Source unexpected when LLM not adopted');
       }
     } else {
       // No key = must not claim LLM usage
-      assert.notStrictEqual(res.provenance.source, 'knowledge_agent+groq_llm', 'Should not mark groq_llm without key');
+      assert.notStrictEqual(res.provenance.source, 'knowledge_agent+claude_llm', 'Should not mark claude_llm without key');
       assert.ok(!res.llmEnhanced, 'llmEnhanced should be false without key');
     }
 

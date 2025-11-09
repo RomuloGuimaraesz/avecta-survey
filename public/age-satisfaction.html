@@ -58,7 +58,7 @@
                 <th>Faixa</th>
                 <th>Respostas (n)</th>
                 <th>Média Satisfação</th>
-                <th>Classificação</th>
+                <th>Nível de Satisfação</th>
               </tr>
             </thead>
             <tbody id="ageTableBody"></tbody>
@@ -116,7 +116,8 @@
         age.brackets.forEach(b => {
           const tr = document.createElement('tr');
           const quality = b.averageScore >= 4 ? 'good' : (b.averageScore < 3 ? 'insufficient' : 'limited');
-          const qualityText = quality === 'good' ? 'Bom' : quality === 'limited' ? 'Limitado' : 'Insuficiente';
+          // Classificação mais clara e compreensível
+          const qualityText = quality === 'good' ? 'Boa Satisfação' : quality === 'limited' ? 'Satisfação Regular' : 'Baixa Satisfação';
           const qualityColor = quality === 'good' ? '#1d7a36' : quality === 'limited' ? '#946200' : '#b40000';
           const qualityBg = quality === 'good' ? '#e3f7e9' : quality === 'limited' ? '#fff4d6' : '#ffe5e5';
 

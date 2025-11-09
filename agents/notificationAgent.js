@@ -1,10 +1,12 @@
 // agents/notificationAgent.js - Refactored to use intelligent LLM responses with actual resident names
 const MunicipalAnalysisEngine = require('../services/MunicipalAnalysisEngine');
+const ResidentFilterService = require('../services/ResidentFilterService');
 
 class IntelligentNotificationAgent {
   constructor() {
     this.name = 'Notification Agent';
     this.analysisEngine = new MunicipalAnalysisEngine();
+    this.residentFilter = new ResidentFilterService();
   }
 
   async processQuery(query, llmResult, preloadedContext = null) {
@@ -66,10 +68,6 @@ class IntelligentNotificationAgent {
   }
 
   extractResidentData(query, preloadedContext) {
-  const normalize = (s) => (s || '').toString().normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
-  const queryLower = (query || '').toLowerCase();
-  const qn = normalize(query);
-    
     // Get raw contact data from intelligent context
     const rawContacts = preloadedContext.intelligentContext?.rawData || 
                        preloadedContext.intelligentContext?.statisticalProfile?.rawContacts || [];
@@ -79,106 +77,22 @@ class IntelligentNotificationAgent {
       return [];
     }
 
-    let residents = [];
-
-    if (
-      qn.includes('dissatisfied') ||
-      qn.includes('unsatisfied') ||
-      qn.includes('insatisfied') ||
-      qn.includes('unhappy') ||
-      qn.includes('insatisf') ||
-      qn.includes('insatisfeito') ||
-      qn.includes('insatisfeitos')
-    ) {
-      // Extract dissatisfied residents with full details
-      residents = rawContacts.filter(contact => 
-        contact.survey && 
-        ['Muito insatisfeito', 'Insatisfeito'].includes(contact.survey.satisfaction)
-      ).map(contact => ({
-        name: contact.name,
-        neighborhood: contact.neighborhood,
-        whatsapp: contact.whatsapp,
-        satisfaction: contact.survey.satisfaction,
-        issue: contact.survey.issue,
-        priority: contact.survey.satisfaction === 'Muito insatisfeito' ? 'HIGH' : 'MEDIUM',
-        participateInterest: contact.survey.participate
-      }));
-    } else if (
-      (qn.includes('satisfied') || qn.includes('satisfeito') || qn.includes('satisfeitos')) &&
-      !(
-        qn.includes('dissatisfied') ||
-        qn.includes('unsatisfied') ||
-        qn.includes('insatisfied') ||
-        qn.includes('unhappy') ||
-        qn.includes('insatisfeito') ||
-        qn.includes('insatisfeitos')
-      )
-    ) {
-      // Extract satisfied residents
-      residents = rawContacts.filter(contact => 
-        contact.survey && 
-        ['Muito satisfeito', 'Satisfeito'].includes(contact.survey.satisfaction)
-      ).map(contact => ({
-        name: contact.name,
-        neighborhood: contact.neighborhood,
-        whatsapp: contact.whatsapp,
-        satisfaction: contact.survey.satisfaction,
-        issue: contact.survey.issue,
-        priority: contact.survey.satisfaction === 'Muito satisfeito' ? 'ADVOCATE' : 'POSITIVE',
-        participateInterest: contact.survey.participate
-      }));
-  } else if (
-      // Positive participation interest
-      (qn.includes('particip') || qn.includes('interested') || qn.includes('interessad') || qn.includes('event')) &&
-      !(qn.includes('nao') || qn.includes('not') || qn.includes('sem interesse') || qn.includes('nao interessados'))
-    ) {
-      // Extract participation-interested residents
-      residents = rawContacts.filter(contact => 
-        contact.survey && contact.survey.participate === 'Sim'
-      ).map(contact => ({
-        name: contact.name,
-        neighborhood: contact.neighborhood,
-        whatsapp: contact.whatsapp,
-        satisfaction: contact.survey.satisfaction,
-        issue: contact.survey.issue,
-        participateInterest: contact.survey.participate,
-        priority: 'ENGAGED'
-      }));
-  } else if (
-      // Negative participation interest (not willing)
-      qn.includes('particip') && (
-        qn.includes('nao') || qn.includes('not') || qn.includes('sem interesse') || qn.includes('nao interessados') || qn.includes('nao querem participar') || qn.includes('nao participaria')
-      )
-    ) {
-      residents = rawContacts.filter(contact => {
-        const p = contact?.survey?.participate;
-        if (!p) return false;
-        const normalized = p.toString().normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
-        return contact.survey && (normalized === 'nao' || normalized === 'no');
-      }).map(contact => ({
-        name: contact.name,
-        neighborhood: contact.neighborhood,
-        whatsapp: contact.whatsapp,
-        satisfaction: contact.survey.satisfaction,
-        issue: contact.survey.issue,
-        participateInterest: contact.survey.participate,
-        priority: 'NOT_WILLING'
-      }));
-  } else if (qn.includes('list') || qn.includes('show') || qn.includes('names') || qn.includes('listar') || qn.includes('mostre') || qn.includes('mostrar') || qn.includes('exibir')) {
-      // List all residents with survey responses
-      residents = rawContacts.filter(contact => contact.survey).map(contact => ({
-        name: contact.name,
-        neighborhood: contact.neighborhood,
-        whatsapp: contact.whatsapp,
-        satisfaction: contact.survey.satisfaction,
-        issue: contact.survey.issue,
-        participateInterest: contact.survey.participate,
-        responded: true
-      }));
+    // Determine filter type from query
+    const filterType = this.residentFilter.determineFilterType(query);
+    
+    if (!filterType) {
+      return [];
     }
 
-  // Return full resident list (no limit) as requested
-  return residents;
+    // Use filter service to extract residents
+    const normalize = (s) => (s || '').toString().normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+    const residents = this.residentFilter.filterResidents(rawContacts, {
+      type: filterType,
+      queryNormalized: normalize(query),
+      query: query
+    });
+
+    return residents;
   }
 
   enhanceLLMResponseWithResidents(llmResponse, residentData, query) {
@@ -252,39 +166,128 @@ class IntelligentNotificationAgent {
   }
 
   buildSegmentReport(residents, segment) {
-    if (!Array.isArray(residents)) return null;
+    if (!Array.isArray(residents) || residents.length === 0) return null;
     const total = residents.length;
     const byNeighborhood = {};
     const byIssue = {};
+    const bySatisfaction = {};
     let advocates = 0, positives = 0, high = 0, medium = 0, participateYes = 0;
+    let withWhatsApp = 0;
 
     residents.forEach(r => {
       const n = (r.neighborhood || 'Desconhecido');
       byNeighborhood[n] = (byNeighborhood[n] || 0) + 1;
       const issue = (r.issue || r.mainIssue || '—');
       byIssue[issue] = (byIssue[issue] || 0) + 1;
+      const sat = (r.satisfaction || '—');
+      bySatisfaction[sat] = (bySatisfaction[sat] || 0) + 1;
       if (r.priority === 'ADVOCATE') advocates++;
       if (r.priority === 'POSITIVE') positives++;
       if (r.priority === 'HIGH') high++;
       if (r.priority === 'MEDIUM') medium++;
-      if (r.participateInterest === 'Sim' || r.participationInterest === true) participateYes++;
+      if (r.participateInterest === 'Sim' || r.participationInterest === true || r.participate === 'Sim') participateYes++;
+      if (r.whatsapp) withWhatsApp++;
     });
 
     const topNeighborhoods = Object.entries(byNeighborhood)
       .sort((a,b)=>b[1]-a[1]).slice(0,5);
     const topIssues = Object.entries(byIssue)
       .sort((a,b)=>b[1]-a[1]).slice(0,5);
+    const satisfactionBreakdown = Object.entries(bySatisfaction)
+      .sort((a,b)=>b[1]-a[1]);
 
-  const label = segment === 'dissatisfied' ? 'Insatisfeitos' : segment === 'satisfied' ? 'Satisfeitos' : segment === 'participation' ? 'Interessados em participar' : 'Contatos';
-    const header = `Relatório inteligente — ${label}`;
-    const metricsLines = [
-      `Total: ${total}`,
-      segment === 'dissatisfied' ? `Prioridade: ${high} alta • ${medium} média` : null,
-      segment === 'satisfied' ? `Potenciais defensores: ${advocates} • Positivos: ${positives}` : null,
-      `Interesse em participar: ${participateYes}`,
-      topNeighborhoods.length ? `Top bairros: ` + topNeighborhoods.map(([n,c])=>`${n} (${c})`).join(', ') : null,
-      topIssues.length ? `Top assuntos: ` + topIssues.map(([i,c])=>`${i} (${c})`).join(', ') : null,
-    ].filter(Boolean);
+    const label = segment === 'dissatisfied' ? 'Insatisfeitos' : 
+                 segment === 'satisfied' ? 'Satisfeitos' : 
+                 segment === 'participation_interested' ? 'Interessados em Participar' :
+                 segment === 'participation_not_interested' ? 'Não Interessados em Participar' :
+                 'Contatos';
+    
+    let text = `📊 RELATÓRIO DE SEGMENTO: ${label.toUpperCase()}\n`;
+    text += `${'='.repeat(60)}\n\n`;
+    
+    text += `📈 MÉTRICAS PRINCIPAIS:\n`;
+    text += `• Total de Cidadãos: ${total}\n`;
+    text += `• Com WhatsApp: ${withWhatsApp} (${((withWhatsApp/total)*100).toFixed(1)}% contactáveis)\n`;
+    
+    if (segment === 'dissatisfied') {
+      text += `• Prioridade Alta (Muito insatisfeitos): ${high} cidadãos ⚠️  Ação imediata\n`;
+      text += `• Prioridade Média (Insatisfeitos): ${medium} cidadãos\n`;
+      if (high > 0) {
+        text += `\n🚨 URGÊNCIA: ${high} cidadão(s) com prioridade ALTA precisam de contato imediato (24-48h)\n`;
+      }
+    } else if (segment === 'satisfied') {
+      text += `• Potenciais Defensores: ${advocates} cidadãos\n`;
+      text += `• Positivos: ${positives} cidadãos\n`;
+      if (advocates > 0) {
+        text += `\n💡 OPORTUNIDADE: ${advocates} cidadão(s) podem ser defensores da gestão municipal\n`;
+      }
+    }
+    
+    if (participateYes > 0) {
+      text += `• Interessados em Participar: ${participateYes} (${((participateYes/total)*100).toFixed(1)}%)\n`;
+    }
+    
+    if (satisfactionBreakdown.length > 0) {
+      text += `\n📊 DISTRIBUIÇÃO DE SATISFAÇÃO:\n`;
+      satisfactionBreakdown.forEach(([level, count]) => {
+        const pct = ((count/total)*100).toFixed(1);
+        text += `  • ${level}: ${count} (${pct}%)\n`;
+      });
+    }
+    
+    if (topNeighborhoods.length > 0) {
+      text += `\n📍 DISTRIBUIÇÃO GEOGRÁFICA (Top 5):\n`;
+      topNeighborhoods.forEach(([neigh, count], index) => {
+        const pct = ((count/total)*100).toFixed(1);
+        text += `  ${index + 1}. ${neigh}: ${count} cidadãos (${pct}%)\n`;
+      });
+    }
+    
+    if (topIssues.length > 0) {
+      text += `\n🎯 PRINCIPAIS QUESTÕES (Top 5):\n`;
+      topIssues.forEach(([issue, count], index) => {
+        const pct = ((count/total)*100).toFixed(1);
+        text += `  ${index + 1}. ${issue}: ${count} relatos (${pct}%)\n`;
+      });
+    }
+    
+    // Add actionable insights
+    text += `\n💡 INSIGHTS ACIONÁVEIS:\n`;
+    if (segment === 'dissatisfied') {
+      if (high > 0) {
+        text += `• ${high} cidadão(s) precisam de contato URGENTE (próximas 24-48 horas)\n`;
+      }
+      if (topIssues.length > 0) {
+        text += `• Questão mais comum: "${topIssues[0][0]}" (${topIssues[0][1]} relatos) - focar resolução\n`;
+      }
+      if (topNeighborhoods.length > 0) {
+        text += `• Bairro com mais casos: ${topNeighborhoods[0][0]} (${topNeighborhoods[0][1]} casos) - visitar prioritariamente\n`;
+      }
+      text += `• Taxa de contactabilidade: ${((withWhatsApp/total)*100).toFixed(1)}% - ${withWhatsApp < total ? 'alguns cidadãos podem precisar de contato presencial' : 'todos têm WhatsApp'}\n`;
+    } else if (segment === 'participation_interested') {
+      text += `• ${total} cidadãos prontos para engajamento comunitário\n`;
+      if (topNeighborhoods.length > 0) {
+        text += `• Bairro com maior interesse: ${topNeighborhoods[0][0]} (${topNeighborhoods[0][1]} cidadãos) - ideal para eventos locais\n`;
+      }
+      text += `• Oportunidade: Criar grupos de trabalho e comitês cidadãos\n`;
+    } else if (segment === 'participation_not_interested') {
+      text += `• ${total} cidadãos não demonstraram interesse em participar\n`;
+      text += `• Estratégia: Entender barreiras e criar abordagens alternativas de engajamento\n`;
+    }
+    
+    text += `\n📋 PRÓXIMOS PASSOS RECOMENDADOS:\n`;
+    if (segment === 'dissatisfied') {
+      text += `1. Contatar ${high > 0 ? high : 'todos os'} cidadão(s) com prioridade ${high > 0 ? 'ALTA' : 'média'} imediatamente\n`;
+      text += `2. Agendar follow-up sistemático para casos de prioridade média\n`;
+      text += `3. Investigar e resolver questões mais comuns identificadas\n`;
+      if (topNeighborhoods.length > 0) {
+        text += `4. Visitar bairro ${topNeighborhoods[0][0]} para ação presencial\n`;
+      }
+    } else if (segment === 'participation_interested') {
+      text += `1. Organizar evento comunitário ou reunião de bairro\n`;
+      text += `2. Criar grupos de trabalho com cidadãos interessados\n`;
+      text += `3. Estabelecer canais de comunicação contínua\n`;
+    }
 
     const templates = segment === 'dissatisfied' ? [
       'Olá {NOME}, aqui é da Prefeitura. Vimos sua insatisfação com {ASSUNTO}. Podemos conversar e encaminhar sua demanda? Responda com um horário preferido.',
@@ -292,22 +295,37 @@ class IntelligentNotificationAgent {
     ] : segment === 'satisfied' ? [
       'Olá {NOME}! Obrigado pelo retorno positivo sobre {ASSUNTO}. Podemos usar seu depoimento (anônimo) para inspirar outras ações no bairro?',
       'Oi {NOME}, que bom saber que está satisfeito com {ASSUNTO}. Podemos convidar você para um grupo consultivo do bairro?'
+    ] : segment === 'participation_interested' ? [
+      'Olá {NOME}! Vimos seu interesse em participar. Gostaríamos de convidá-lo para nosso próximo evento comunitário. Data e horário a confirmar.',
+      'Oi {NOME}, que bom saber do seu interesse! Podemos criar um grupo de trabalho no seu bairro. Você topa?'
     ] : [
       'Olá {NOME}, tudo bem? Gostaríamos de entender melhor suas necessidades no bairro sobre {ASSUNTO}. Podemos conversar?'
     ];
 
-    const text = `${header}\n\n• ${metricsLines.join('\n• ')}\n`;
     return {
       text,
       metrics: {
         total,
+        withWhatsApp,
+        contactabilityRate: ((withWhatsApp/total)*100).toFixed(1),
         priorities: { high, medium },
         satisfaction: { advocates, positives },
         participationInterested: participateYes,
         topNeighborhoods,
-        topIssues
+        topIssues,
+        satisfactionBreakdown
       },
-      whatsappTemplates: templates
+      whatsappTemplates: templates,
+      actionableSteps: segment === 'dissatisfied' ? [
+        `Contatar ${high} cidadãos com prioridade ALTA (24-48h)`,
+        `Agendar follow-up para ${medium} cidadãos com prioridade média`,
+        `Investigar questão "${topIssues[0]?.[0] || 'principal'}"`,
+        topNeighborhoods[0] ? `Visitar bairro ${topNeighborhoods[0][0]}` : null
+      ].filter(Boolean) : segment === 'participation_interested' ? [
+        `Organizar evento comunitário`,
+        `Criar grupos de trabalho`,
+        `Estabelecer comunicação contínua`
+      ] : []
     };
   }
 
@@ -381,25 +399,58 @@ class IntelligentNotificationAgent {
       recommendations.push('Use positive feedback to identify best practices');
       
     } else if (queryLower.includes('particip') || queryLower.includes('interested')) {
-      summary = `Municipal Participation Analysis\n\n`;
-      summary += `Community Engagement Opportunity: ${residentData.length} residents interested in participation\n\n`;
+      // Check if it's "not interested" query
+      const isNotInterested = queryLower.includes('nao') || queryLower.includes('não') || 
+                             queryLower.includes('not') || queryLower.includes('sem interesse') ||
+                             queryLower.includes('nao querem participar') || queryLower.includes('nao participaria');
       
-      if (residentData.length > 0) {
-        summary += `PARTICIPATION-INTERESTED RESIDENTS:\n`;
-        residentData.forEach((resident, index) => {
-          summary += `${index + 1}. ${resident.name} (${resident.neighborhood})\n`;
-          summary += `   • Satisfaction: ${resident.satisfaction}\n`;
-          summary += `   • Focus area: ${resident.issue}\n`;
-          summary += `   • WhatsApp: ${resident.whatsapp}\n\n`;
-        });
+      if (isNotInterested) {
+        summary = `Análise de Participação: Cidadãos Não Interessados\n\n`;
+        summary += `Cidadãos que não demonstraram interesse em participar: ${residentData.length}\n\n`;
+        
+        if (residentData.length > 0) {
+          summary += `CIDADÃOS NÃO INTERESSADOS:\n`;
+          residentData.slice(0, 20).forEach((resident, index) => {
+            summary += `${index + 1}. ${resident.name} (${resident.neighborhood || 'N/A'})\n`;
+            if (resident.satisfaction) summary += `   • Satisfação: ${resident.satisfaction}\n`;
+            if (resident.issue) summary += `   • Questão: ${resident.issue}\n`;
+            if (resident.whatsapp) summary += `   • WhatsApp: ${resident.whatsapp}\n`;
+            summary += `\n`;
+          });
+          if (residentData.length > 20) {
+            summary += `... e mais ${residentData.length - 20} cidadãos\n\n`;
+          }
+        }
+        
+        insights.push(`${residentData.length} cidadãos não demonstraram interesse em participar`);
+        insights.push('Entender barreiras pode ajudar a aumentar o engajamento futuro');
+        insights.push('Abordagens alternativas podem ser necessárias para este grupo');
+        
+        recommendations.push('Investigar razões para falta de interesse (pesquisa qualitativa)');
+        recommendations.push('Criar abordagens alternativas de engajamento menos formais');
+        recommendations.push('Focar em comunicação mais direta e personalizada');
+        
+      } else {
+        summary = `Municipal Participation Analysis\n\n`;
+        summary += `Community Engagement Opportunity: ${residentData.length} residents interested in participation\n\n`;
+        
+        if (residentData.length > 0) {
+          summary += `PARTICIPATION-INTERESTED RESIDENTS:\n`;
+          residentData.forEach((resident, index) => {
+            summary += `${index + 1}. ${resident.name} (${resident.neighborhood})\n`;
+            summary += `   • Satisfaction: ${resident.satisfaction}\n`;
+            summary += `   • Focus area: ${resident.issue}\n`;
+            summary += `   • WhatsApp: ${resident.whatsapp}\n\n`;
+          });
+        }
+        
+        insights.push(`${residentData.length} residents ready for community engagement`);
+        insights.push('Strong foundation for municipal events and initiatives');
+        
+        recommendations.push('Organize community events with interested residents');
+        recommendations.push('Create citizen advisory groups from engaged residents');
+        recommendations.push('Use participation interest for municipal planning input');
       }
-      
-      insights.push(`${residentData.length} residents ready for community engagement`);
-      insights.push('Strong foundation for municipal events and initiatives');
-      
-      recommendations.push('Organize community events with interested residents');
-      recommendations.push('Create citizen advisory groups from engaged residents');
-      recommendations.push('Use participation interest for municipal planning input');
       
     } else {
       summary = `Municipal Contact Analysis\n\n`;
@@ -421,7 +472,15 @@ class IntelligentNotificationAgent {
     
     // Attach intelligent report for this segment
     const segment = this.getSegmentTypeFromQuery(query);
-    const report = this.buildSegmentReport(residentData, segment);
+    // Map query to correct segment type
+    let reportSegment = segment;
+    if (queryLower.includes('nao') || queryLower.includes('não') || queryLower.includes('not') || 
+        queryLower.includes('sem interesse') || queryLower.includes('nao querem participar')) {
+      reportSegment = 'participation_not_interested';
+    } else if (queryLower.includes('particip') && !(queryLower.includes('nao') || queryLower.includes('not'))) {
+      reportSegment = 'participation_interested';
+    }
+    const report = this.buildSegmentReport(residentData, reportSegment);
     if (report?.text) {
       summary += `\n\n${report.text}`;
     }

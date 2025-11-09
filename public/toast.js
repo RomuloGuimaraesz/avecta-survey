@@ -30,7 +30,7 @@
       return toast;
     }
 
-    createToast(message, type, options) {
+    createToast(message, type, options = {}) {
       const toast = document.createElement('div');
       toast.className = `toast ${type}`;
 
@@ -48,6 +48,16 @@
         info: options.title || 'Informação'
       };
 
+      const actions = Array.isArray(options.actions) ? options.actions : [];
+      const hasProgress = options.progress !== false;
+      const actionButtons = actions
+        .map((action, index) => {
+          const variantClass = action?.variant ? ` toast-action-button--${action.variant}` : '';
+          const label = action?.label || 'Ação';
+          return `<button type="button" class="toast-action-button${variantClass}" data-action-index="${index}">${label}</button>`;
+        })
+        .join('');
+
       toast.innerHTML = `
         <div class="toast-icon">${icons[type] || icons.info}</div>
         <div class="toast-content">
@@ -55,11 +65,40 @@
           <div class="toast-message">${message}</div>
         </div>
         <button class="toast-close" onclick="toastManager.remove(this.parentElement)">×</button>
-        ${options.progress !== false ? '<div class="toast-progress"></div>' : ''}
+        ${hasProgress ? '<div class="toast-progress"></div>' : ''}
+        ${actions.length ? `<div class="toast-actions">${actionButtons}</div>` : ''}
       `;
 
       // Store reference
       this.toasts.set(toast, { type, message, options });
+
+      if (actions.length) {
+        const buttons = toast.querySelectorAll('.toast-action-button');
+        buttons.forEach((button) => {
+          const index = Number(button.getAttribute('data-action-index'));
+          const action = actions[index];
+
+          if (!action) {
+            return;
+          }
+
+          button.addEventListener('click', async (event) => {
+            event.stopPropagation();
+
+            try {
+              if (typeof action.onClick === 'function') {
+                await action.onClick(event, { manager: this, toast, actionIndex: index });
+              }
+            } catch (error) {
+              console.error('[ToastManager] action handler error:', error);
+            }
+
+            if (action.dismissOnClick !== false) {
+              this.remove(toast);
+            }
+          });
+        });
+      }
 
       return toast;
     }
@@ -67,12 +106,21 @@
     remove(toast) {
       if (!toast || !toast.parentElement) return;
 
+      const toastData = this.toasts.get(toast);
+
       toast.classList.add('hide');
       setTimeout(() => {
         if (toast.parentElement) {
           toast.parentElement.removeChild(toast);
         }
         this.toasts.delete(toast);
+        if (toastData?.options?.onClose) {
+          try {
+            toastData.options.onClose(toast);
+          } catch (error) {
+            console.error('[ToastManager] onClose handler error:', error);
+          }
+        }
       }, 300);
     }
 

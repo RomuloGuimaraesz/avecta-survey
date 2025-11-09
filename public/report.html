@@ -111,9 +111,9 @@
         container.appendChild(premium);
       }
 
-      // LLM Detailed Analysis (Análise Detalhada) - show raw enhanced narrative separately if provenance indicates Groq enhancement
-      const isGroq = !!(result.llmEnhanced && result.provenance?.source && /groq_llm/.test(result.provenance.source));
-      if (isGroq) {
+      // LLM Detailed Analysis (Análise Detalhada) - show raw enhanced narrative separately if provenance indicates Claude enhancement
+      const isClaude = !!(result.llmEnhanced && result.provenance?.source && /claude_llm/.test(result.provenance.source));
+      if (isClaude) {
         const detailedCard = document.createElement('div');
         detailedCard.className = 'card';
         const h2 = document.createElement('h2'); h2.textContent = 'Análise Detalhada'; detailedCard.appendChild(h2);
@@ -129,7 +129,7 @@
         detailedCard.appendChild(pre);
         // Optional provenance footer
         const provFooter = document.createElement('div'); provFooter.className='muted'; provFooter.style.marginTop='8px';
-        provFooter.textContent = 'Fonte: Groq LLM • Proveniência: ' + (result.provenance?.source || '—');
+        provFooter.textContent = 'Fonte: Claude LLM • Proveniência: ' + (result.provenance?.source || '—');
         detailedCard.appendChild(provFooter);
         container.appendChild(detailedCard);
       }

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Dashboard - Sistema Municipal</title>
+  <title>Painel Geral | Avecta AI</title>
 
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -24,10 +24,7 @@
         <ai-chat id="aiChat"></ai-chat>
       </nav>
 
-      <!-- System badges -->
-      <div>
-        <p>System badges</p>
-      </div>
+      <!-- Future System badges -->
     </header>
 
     <!-- Statistics Panel -->
@@ -35,7 +32,7 @@
 
     <!-- Actions Toggle -->
     <div class="actions-toggle m-2">
-      <a href="#" id="toggleActions" aria-expanded="false" aria-controls="actionsBar">Mostrar ações</a>
+      <a href="#" id="toggleActions" aria-expanded="false" aria-controls="actionsBar">Menu de ações</a>
     </div>
 
     <!-- Filter & Actions Bar -->
@@ -55,8 +52,6 @@
       <div class="table-header">
         <div class="table-title">Contatos</div>
         <div class="column-navigation">
-          <button id="reset-demo-inline" class="btn-inline hidden mr-8">Reset Demo Data</button>
-          <button id="restore-seed-inline" class="btn-inline btn-success hidden mr-8">Restore Demo Data</button>
           <button class="nav-button" id="prevColumn">‹</button>
           <div class="column-indicator" id="columnIndicator">Nome • Idade</div>
           <button class="nav-button" id="nextColumn">›</button>
@@ -92,6 +87,24 @@
 
     <div class="slide-panel-content" id="citizenDetails">
       <!-- Content populated by JavaScript -->
+    </div>
+  </div>
+
+  <div class="confirmation-modal-overlay" id="deleteConfirmOverlay" role="presentation" hidden>
+    <div class="confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="deleteConfirmTitle" aria-describedby="deleteConfirmMessage">
+      <div class="confirmation-modal-icon" aria-hidden="true">⚠️</div>
+      <h2 class="confirmation-modal-title" id="deleteConfirmTitle">Confirmar exclusão</h2>
+      <p class="confirmation-modal-message" id="deleteConfirmMessage">
+        Tem certeza que deseja excluir este contato? Esta ação não pode ser desfeita.
+      </p>
+      <div class="confirmation-modal-actions">
+        <button type="button" class="modal-button modal-button--secondary" id="cancelDeleteButton">
+          Cancelar
+        </button>
+        <button type="button" class="modal-button modal-button--danger" id="confirmDeleteButton">
+          Excluir contato
+        </button>
+      </div>
     </div>
   </div>
 

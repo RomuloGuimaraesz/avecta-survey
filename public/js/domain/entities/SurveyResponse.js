@@ -5,12 +5,22 @@
 import { SatisfactionLevel, CivicIssueType, ParticipationIntent } from '../../shared/constants.js';
 
 export class SurveyResponse {
-  constructor(civicIssue, satisfactionLevel, participationIntent, answeredAt, otherIssueDetails = null) {
+  constructor(
+    civicIssue,
+    satisfactionLevel,
+    participationIntent,
+    answeredAt,
+    otherIssueDetails = null,
+    cep = null,
+    complemento = null
+  ) {
     this._civicIssue = civicIssue;
     this._satisfactionLevel = satisfactionLevel;
     this._participationIntent = participationIntent;
     this._answeredAt = answeredAt;
     this._otherIssueDetails = otherIssueDetails;
+    this._cep = cep;
+    this._complemento = complemento;
 
     Object.freeze(this);
   }
@@ -33,6 +43,14 @@ export class SurveyResponse {
 
   get otherIssueDetails() {
     return this._otherIssueDetails;
+  }
+
+  get cep() {
+    return this._cep;
+  }
+
+  get complemento() {
+    return this._complemento;
   }
 
   isSatisfied() {

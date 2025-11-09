@@ -16,6 +16,8 @@ import { LoadCitizensUseCase } from './application/usecases/LoadCitizensUseCase.
 import { SendWhatsAppMessageUseCase } from './application/usecases/SendWhatsAppMessageUseCase.js';
 import { ExportCitizensUseCase } from './application/usecases/ExportCitizensUseCase.js';
 import { ProcessAIQueryUseCase } from './application/usecases/ProcessAIQueryUseCase.js';
+import { UpdateCitizenUseCase } from './application/usecases/UpdateCitizenUseCase.js';
+import { DeleteCitizenUseCase } from './application/usecases/DeleteCitizenUseCase.js';
 
 // Infrastructure
 import { ApiClient } from './infrastructure/api/ApiClient.js';
@@ -113,6 +115,14 @@ class Application {
     this.dependencies.processAIQueryUseCase = new ProcessAIQueryUseCase(
       this.dependencies.aiAssistantService
     );
+
+    this.dependencies.updateCitizenUseCase = new UpdateCitizenUseCase(
+      this.dependencies.citizenRepository
+    );
+
+    this.dependencies.deleteCitizenUseCase = new DeleteCitizenUseCase(
+      this.dependencies.citizenRepository
+    );
   }
 
   setupPresentationComponents() {
@@ -148,6 +158,14 @@ class Application {
   }
 
   setupViewModel() {
+    // Set update and delete use cases in details panel
+    this.dependencies.detailsPanel.setUpdateCitizenUseCase(
+      this.dependencies.updateCitizenUseCase
+    );
+    this.dependencies.detailsPanel.setDeleteCitizenUseCase(
+      this.dependencies.deleteCitizenUseCase
+    );
+
     this.dependencies.adminViewModel = new AdminViewModel({
       loadCitizensUseCase: this.dependencies.loadCitizensUseCase,
       sendWhatsAppUseCase: this.dependencies.sendWhatsAppUseCase,
@@ -166,11 +184,6 @@ class Application {
         window.APP_BASE_URL = config.baseUrl;
       }
 
-      // Handle demo reset button
-      if (config?.demoResetEnabled) {
-        this.setupDemoResetButton();
-        this.setupRestoreSeedButton();
-      }
     } catch (error) {
       console.warn('[Application] Failed to load configuration:', error);
     }
@@ -181,74 +194,6 @@ class Application {
     }
   }
 
-  setupDemoResetButton() {
-    const inlineBtn = document.getElementById('reset-demo-inline');
-    const restoreBtn = document.getElementById('restore-seed-inline');
-
-    if (inlineBtn) {
-      inlineBtn.classList.remove('hidden');
-      inlineBtn.addEventListener('click', async () => {
-        await this.handleDemoReset();
-      });
-    }
-  }
-
-  setupRestoreSeedButton() {
-    const restoreBtn = document.getElementById('restore-seed-inline');
-
-    if (restoreBtn) {
-      restoreBtn.classList.remove('hidden');
-      restoreBtn.addEventListener('click', async () => {
-        await this.handleRestoreSeed();
-      });
-    }
-  }
-
-  async handleDemoReset() {
-    const loadingToast = this.dependencies.toastManager?.info(
-      'Limpando dados de demonstração...',
-      { title: 'Processando', progress: true, duration: 10000 }
-    );
-
-    try {
-      const response = await this.dependencies.apiClient.post('/api/admin/reset-data');
-
-      if (loadingToast) this.dependencies.toastManager.remove(loadingToast);
-      this.dependencies.toastManager?.success('Dados apagados com sucesso.', {
-        title: 'Concluído'
-      });
-
-      await this.dependencies.adminViewModel.refresh();
-    } catch (error) {
-      if (loadingToast) this.dependencies.toastManager.remove(loadingToast);
-      this.dependencies.toastManager?.error(error.message || 'Falha ao apagar dados.', {
-        title: 'Erro'
-      });
-    }
-  }
-
-  async handleRestoreSeed() {
-    const loadingToast = this.dependencies.toastManager?.info(
-      'Restaurando dados de demonstração...',
-      { title: 'Processando', progress: true, duration: 10000 }
-    );
-
-    try {
-      const response = await this.dependencies.apiClient.post('/api/admin/restore-seed');
-
-      if (loadingToast) this.dependencies.toastManager.remove(loadingToast);
-      this.dependencies.toastManager?.success('Dados restaurados com sucesso.', {
-        title: 'Concluído'
-      });
-
-      await this.dependencies.adminViewModel.refresh();
-    } catch (error) {
-      if (loadingToast) this.dependencies.toastManager.remove(loadingToast);
-      this.dependencies.toastManager?.error(error.message || 'Falha ao restaurar dados.', {
-        title: 'Erro'
-      });
-    }
-  }
 
   exposeGlobals() {
     // Expose for compatibility with inline HTML handlers
