@@ -1,0 +1,32 @@
+[
+  {
+    "id": 1758411287068,
+    "name": "Priscilla Rosa",
+    "age": 34,
+    "neighborhood": "Serraria",
+    "whatsapp": "5511989889891",
+    "createdAt": "2025-09-20T23:34:47.068Z",
+    "whatsappSentAt": "2025-09-20T23:35:03.430Z",
+    "whatsappMessageId": "mock_1758411303430",
+    "whatsappProvider": "mock",
+    "whatsappStatus": "sent",
+    "whatsappStatusUpdatedAt": "2025-09-20T23:35:03.430Z",
+    "clickedAt": "2025-09-20T23:37:02.462Z",
+    "survey": null
+  },
+  {
+    "id": 1762697451759,
+    "name": "Rômulo Guimarães",
+    "age": 34,
+    "neighborhood": "Centro",
+    "whatsapp": "5511992368100",
+    "createdAt": "2025-11-09T14:10:51.759Z",
+    "whatsappSentAt": null,
+    "whatsappMessageId": null,
+    "whatsappProvider": null,
+    "whatsappStatus": null,
+    "whatsappStatusUpdatedAt": null,
+    "clickedAt": null,
+    "survey": null
+  }
+]

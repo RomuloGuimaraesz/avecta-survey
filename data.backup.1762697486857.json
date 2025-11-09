@@ -1,0 +1,17 @@
+[
+  {
+    "id": 1762697451759,
+    "name": "Rômulo Guimarães",
+    "age": 34,
+    "neighborhood": "Centro",
+    "whatsapp": "5511992368100",
+    "createdAt": "2025-11-09T14:10:51.759Z",
+    "whatsappSentAt": "2025-11-09T14:11:12.253Z",
+    "whatsappMessageId": null,
+    "whatsappProvider": "manual",
+    "whatsappStatus": "sent",
+    "whatsappStatusUpdatedAt": "2025-11-09T14:11:12.254Z",
+    "clickedAt": null,
+    "survey": null
+  }
+]
